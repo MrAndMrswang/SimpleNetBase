@@ -1,6 +1,7 @@
 #include "Thread.h"
 #include "CurrentThread.h"
-#include "Exception.h"
+#include "Timestamp.h"
+//#include "Exception.h"
 //#include "Logging.h"
 
 #include <boost/static_assert.hpp>
@@ -18,7 +19,7 @@
 namespace CurrentThread
 {
 	__thread int t_cachedTid = 0;
-	__thread char_t tidString[32];
+	__thread char t_tidString[32];
 	__thread int t_tidStringLength = 6;
 	__thread const char* t_threadName = "unknown";
 	const bool sameType = boost::is_same<int , pid_t>::value;
@@ -42,7 +43,7 @@ public:
 	ThreadNameInitializer()
 	{
 		CurrentThread::t_threadName = "main";
-		CurrentThraed::tid();
+		CurrentThread::tid();
 		pthread_atfork(NULL,NULL,&afterFork);
 	}
 
@@ -57,7 +58,7 @@ struct ThreadData
 	pid_t* tid_;
 
 	CountDownLatch* latch_;
-	ThreadData(const ThreadFunc& func,const string& name, pid_t *tid,CountDownLatch *latch)
+	ThreadData(const ThreadFunc& func,const string& name, pid_t* tid,CountDownLatch* latch)
 	:func_(func),name_(name),tid_(tid),latch_(latch)
 	{}
 
@@ -75,14 +76,14 @@ struct ThreadData
 			func_();
 			CurrentThread::t_threadName = "finished";
 		}
-		catch (const Exception& ex)
+		/*catch (const Exception& ex)
 		{
 			CurrentThread::t_threadName = "crashed";
 			fprintf(stderr, "exception caught in Thread %s\n", name_.c_str());
 			fprintf(stderr, "reason: %s\n", ex.what());
 			fprintf(stderr, "stack trace: %s\n", ex.stackTrace());
 			abort();
-		}
+		}*/
 		catch (const std::exception& ex)
 		{
 			CurrentThread::t_threadName = "crashed";
@@ -130,11 +131,9 @@ void CurrentThread::sleepUsec(int64_t usec)
 	::nanosleep(&ts,NULL);
 
 }
-
 AtomicInt32 Thread::numCreated_;
-
 Thread::Thread(const ThreadFunc& func, const string& n)
-:started_(false),joined_(false),pthreadId_(0),tid_(new pid_t(0)),func_(func),name_(n),latch_(1)
+:started_(false),joined_(false),pthreadId_(0),tid_(0),func_(func),name_(n),latch_(1)
 {
 	setDefaultName();
 }
@@ -143,7 +142,7 @@ Thread::~Thread()
 {
 	if(started_&&!joined_)
 	{
-		pthread_detch(pthreadId_);
+		pthread_detach(pthreadId_);
 	}
 }
 
@@ -151,7 +150,7 @@ Thread::~Thread()
 void Thread::setDefaultName()
 {
 	int num = numCreated_.incrementAndGet();
-	if(name_.emtpy())
+	if(name_.empty())
 	{
 		char buf[32];
 		snprintf(buf,sizeof buf,"Thread%d",num);
@@ -184,12 +183,4 @@ int Thread::join()
 	joined_ = true;
 	return pthread_join(pthreadId_,NULL);
 }
-
-
-
-
-
-
-
-
 

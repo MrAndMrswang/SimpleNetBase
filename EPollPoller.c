@@ -39,6 +39,7 @@ EPollPoller::~EPollPoller()
 Timestamp EPollPoller::poll(int timeoutMs, ChannelList* activeChannels)
 {
 	//LOG_TRACE << "fd total count " << channels_.size();
+	//printf("Epollpoller is waiting: \n");
 	int numEvents = ::epoll_wait(epollfd_,
 				       &*events_.begin(),
 				       static_cast<int>(events_.size()),
@@ -64,7 +65,7 @@ Timestamp EPollPoller::poll(int timeoutMs, ChannelList* activeChannels)
 		if (savedErrno != EINTR)
 		{
 			errno = savedErrno;
-			LOG_SYSERR << "EPollPoller::poll()";
+			//LOG_SYSERR << "EPollPoller::poll()";
 		}
 	}
 	return now;
@@ -92,8 +93,8 @@ void EPollPoller::updateChannel(Channel* channel)
 {
 	Poller::assertInLoopThread();
 	const int index = channel->index();
-	LOG_TRACE << "fd = " << channel->fd()
-	<< " events = " << channel->events() << " index = " << index;
+	//LOG_TRACE << "fd = " << channel->fd()
+	//<< " events = " << channel->events() << " index = " << index;
 	if (index == kNew || index == kDeleted)
 	{
 		// a new one, add with EPOLL_CTL_ADD
@@ -111,6 +112,7 @@ void EPollPoller::updateChannel(Channel* channel)
 
 		channel->set_index(kAdded);
 		update(EPOLL_CTL_ADD, channel);
+		printf("EPollPoller::updateChannel %d\n",channel->fd());
 	}
 	else
 	{
@@ -136,7 +138,7 @@ void EPollPoller::removeChannel(Channel* channel)
 {
 	Poller::assertInLoopThread();
 	int fd = channel->fd();
-	LOG_TRACE << "fd = " << fd;
+	//LOG_TRACE << "fd = " << fd;
 	assert(channels_.find(fd) != channels_.end());
 	assert(channels_[fd] == channel);
 	assert(channel->isNoneEvent());
@@ -160,19 +162,21 @@ void EPollPoller::update(int operation, Channel* channel)
 	event.events = channel->events();
 	event.data.ptr = channel;
 	int fd = channel->fd();
-	LOG_TRACE << "epoll_ctl op = " << operationToString(operation)
-	<< " fd = " << fd << " event = { " << channel->eventsToString() << " }";
-	if (::epoll_ctl(epollfd_, operation, fd, &event) < 0)
+	//LOG_TRACE << "epoll_ctl op = " << operationToString(operation)
+	//<< " fd = " << fd << " event = { " << channel->eventsToString() << " }";
+	int test;//delete
+	if ((test=::epoll_ctl(epollfd_, operation, fd, &event)) < 0)
 	{
 		if (operation == EPOLL_CTL_DEL)
 		{
-			LOG_SYSERR << "epoll_ctl op =" << operationToString(operation) << " fd =" << fd;
+			//LOG_SYSERR << "epoll_ctl op =" << operationToString(operation) << " fd =" << fd;
 		}
 		else
 		{
-			LOG_SYSFATAL << "epoll_ctl op =" << operationToString(operation) << " fd =" << fd;
+			//LOG_SYSFATAL << "epoll_ctl op =" << operationToString(operation) << " fd =" << fd;
 		}
 	}
+	printf("epoll_ctl return :%d \n",test);
 }
 
 const char* EPollPoller::operationToString(int op)

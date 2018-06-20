@@ -138,7 +138,7 @@ void TcpConnection::sendInLoop(const void* data, size_t len)
 	if(!faultError && remaining>0)
 	{
 		size_t oldLen = outputBuffer_.readableBytes();
-		if(oldLen+remaining >= highWaterMark_ &&highWaterMarkCallback_)
+		if(oldLen+remaining >= highWaterMark_ && highWaterMarkCallback_)
 		{
 			loop_->queueInLoop(boost::bind(highWaterMarkCallback_
 			,shared_from_this(),oldLen+remaining));
@@ -149,8 +149,6 @@ void TcpConnection::sendInLoop(const void* data, size_t len)
 			channel_->enableWriting();
 		}
 	}
-
-
 }
 
 void TcpConnection::shutdown()

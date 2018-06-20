@@ -1,6 +1,6 @@
 #include "PollPoller.h"
 
-#include <muduo/base/Logging.h>
+//#include "Logging.h"
 #include "Types.h"
 #include "Channel.h"
 
@@ -25,19 +25,19 @@ Timestamp PollPoller::poll(int timeoutMs, ChannelList* activeChannels)
 	Timestamp now(Timestamp::now());
 	if (numEvents > 0)
 	{
-		LOG_TRACE << numEvents << " events happened";
+		//LOG_TRACE << numEvents << " events happened";
 		fillActiveChannels(numEvents, activeChannels);
 	}
 	else if (numEvents == 0)
 	{
-		LOG_TRACE << " nothing happened";
+		//LOG_TRACE << " nothing happened";
 	}
 	else
 	{
 		if (savedErrno != EINTR)
 		{
 			errno = savedErrno;
-			LOG_SYSERR << "PollPoller::poll()";
+			//LOG_SYSERR << "PollPoller::poll()";
 		}
 	}
 	return now;

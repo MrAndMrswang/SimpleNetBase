@@ -1,10 +1,21 @@
 
+#include "TimerQueue.h"
 
+//#include "Logging.h"
+#include "EventLoop.h"
+#include "Timer.h"
+#include "TimerId.h"
+
+#include <boost/bind.hpp>
+
+#include <sys/timerfd.h>
+#include <unistd.h>
 
 int createTimerfd()
 {
 	int timerfd = ::timerfd_create(CLOCK_MONOTONIC,TFD_NONBLOCK | TFD_CLOEXEC);
 	if(timerfd<0)
+	{
 		//LOG_SYSFATAL<<"Failed in timerfd create";
 	}
 	return timerfd;
@@ -19,7 +30,7 @@ struct timespec howMuchTimeFromNow(Timestamp when)
 	}
 	struct timespec ts;
 	ts.tv_sec = static_cast<time_t>(microseconds/Timestamp::kMicroSecondsPerSecond);
-	ts.tc_nsec  =static_cast<long>((microseconds% Timestamp::kMicroSecondsPerSecond)*1000);
+	ts.tv_nsec = static_cast<long>((microseconds% Timestamp::kMicroSecondsPerSecond)*1000);
 	return ts;
 }
 
@@ -34,12 +45,12 @@ void readTimerfd(int timerfd,Timestamp now)
 	}
 }
 
-void resetTimerfd(int timerfd, Timerstamp expiration)
+void resetTimerfd(int timerfd, Timestamp expiration)
 {
 	struct itimerspec newValue;
 	struct itimerspec oldValue;
 	bzero(&newValue, sizeof newValue);
-	bzero(&oldvalue, sizeof oldValue);
+	bzero(&oldValue, sizeof oldValue);
 	newValue.it_value = howMuchTimeFromNow(expiration);
 	int ret = ::timerfd_settime(timerfd,0,&newValue,&oldValue);
 	if(ret)
@@ -54,24 +65,14 @@ TimerId TimerQueue::addTimer(const TimerCallback& cb,Timestamp when,double inter
 {
 	Timer* timer = new Timer(cb,when,interval);
 	loop_->runInLoop(boost::bind(&TimerQueue::addTimerInLoop,this,timer));
-	return TimerId(timer);
-}
-
-void TimerQueue::addTimerInLoop(Timer* timer)
-{
-	loop_->assert(InLoopThread());
-	bool earliestChanged = insert(timer);
-	
-	if(earliestChanged)
-	{
-		resetTimerfd(timerfd_,timer->expiration());
-	}
+	return TimerId(timer, timer->sequence());
 }
 
 void TimerQueue::addTimerInLoop(Timer* timer)
 {
 	loop_->assertInLoopThread();
 	bool earliestChanged = insert(timer);
+	
 	if(earliestChanged)
 	{
 		resetTimerfd(timerfd_,timer->expiration());
@@ -83,10 +84,9 @@ void TimerQueue::cancel(TimerId timerId)
 	loop_->runInLoop(boost::bind(&TimerQueue::cancelInLoop,this,timerId));
 }
 
-
 void TimerQueue::cancelInLoop(TimerId timerId)
 {
-	loop_->asserTInLoopThread();
+	loop_->assertInLoopThread();
 	assert(timers_.size() == activeTimers_.size());
 	ActiveTimer timer(timerId.timer_,timerId.sequence_);
 	ActiveTimerSet::iterator it = activeTimers_.find(timer);
@@ -106,7 +106,7 @@ void TimerQueue::cancelInLoop(TimerId timerId)
 
 std::vector<TimerQueue::Entry> TimerQueue::getExpired(Timestamp now)
 {
-	assert(timers_.size() = activeTimers_.size());
+	assert(timers_.size() == activeTimers_.size());
 	std::vector<Entry> expired;
 	Entry sentry(now,reinterpret_cast<Timer*>(UINTPTR_MAX));
 	
@@ -137,7 +137,7 @@ void TimerQueue::handleRead()
 	std::vector<Entry> expired = getExpired(now);
 	callingExpiredTimers_ = true;
 	cancelingTimers_.clear();
-	for(std::vector<Entry>::iterator it = expired.begin();it !=expired.end();++it)
+	for(std::vector<Entry>::iterator it = expired.begin();it != expired.end();++it)
 	{
 		it->second->run();
 	}
@@ -157,7 +157,7 @@ bool TimerQueue::insert(Timer* timer)
 		earliestChanged  = true;
 	}
 	{
-		std::pair<TimerList::iterator,bool> result = timers._insert(Entry(when,timer));
+		std::pair<TimerList::iterator,bool> result = timers_.insert(Entry(when,timer));
 		assert(result.second);(void)result;
 	}
 	{
@@ -165,6 +165,7 @@ bool TimerQueue::insert(Timer* timer)
 		assert(result.second);(void) result;
 	}
 	assert(timers_.size() == activeTimers_.size());
+	printf("TimerQueue::insert success! %d \n",timer->sequence());
 	return earliestChanged;
 }
 
@@ -172,7 +173,7 @@ bool TimerQueue::insert(Timer* timer)
 void TimerQueue::reset(const std::vector<Entry>& expired,Timestamp now)
 {
 	Timestamp nextExpire;
-	for(std::vector<Entry>::const_iterator it = expired.begin());it!=expired.end();it++)
+	for(std::vector<Entry>::const_iterator it = expired.begin();it!=expired.end();it++)
 	{
 		ActiveTimer timer(it->second,it->second->sequence());
 		if(it->second->repeat()&&cancelingTimers_.find(timer) == cancelingTimers_.end())

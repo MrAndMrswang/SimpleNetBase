@@ -2,7 +2,7 @@
 
 //#include "Logging.h"
 #include "Endian.h"
-#include "SocketsOps.h"
+#include "SocketOps.h"
 
 #include <netdb.h>
 #include <strings.h>  // bzero
@@ -128,7 +128,7 @@ bool InetAddress::resolve(StringArg hostname, InetAddress* out)
 	{
 		if (ret)
 		{
-			LOG_SYSERR << "InetAddress::resolve";
+			//LOG_SYSERR << "InetAddress::resolve";
 		}
 		return false;
 	}

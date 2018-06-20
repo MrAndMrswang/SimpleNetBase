@@ -4,7 +4,7 @@
 #include <string.h>
 #include <iosfwd>    // for ostream forward-declaration
 
-#include <muduo/base/Types.h>
+#include "Types.h"
 #ifndef MUDUO_STD_STRING
 #include <string>
 #endif
@@ -33,29 +33,29 @@ class StringArg // copyable
 };
 
 class StringPiece {
- private:
-  const char*   ptr_;
-  int           length_;
+private:
+	const char*   ptr_;
+	int           length_;
 
- public:
+public:
   // We provide non-explicit singleton constructors so users can pass
   // in a "const char*" or a "string" wherever a "StringPiece" is
   // expected.
-  StringPiece()
-    : ptr_(NULL), length_(0) { }
-  StringPiece(const char* str)
-    : ptr_(str), length_(static_cast<int>(strlen(ptr_))) { }
-  StringPiece(const unsigned char* str)
-    : ptr_(reinterpret_cast<const char*>(str)),
-      length_(static_cast<int>(strlen(ptr_))) { }
-  StringPiece(const string& str)
-    : ptr_(str.data()), length_(static_cast<int>(str.size())) { }
+	StringPiece()
+		: ptr_(NULL), length_(0) { }
+	StringPiece(const char* str)
+		: ptr_(str), length_(static_cast<int>(strlen(ptr_))) { }
+	StringPiece(const unsigned char* str)
+		: ptr_(reinterpret_cast<const char*>(str)),
+	length_(static_cast<int>(strlen(ptr_))) { }
+	StringPiece(const string& str)
+		: ptr_(str.data()), length_(static_cast<int>(str.size())) { }
 #ifndef MUDUO_STD_STRING
-  StringPiece(const std::string& str)
-    : ptr_(str.data()), length_(static_cast<int>(str.size())) { }
+	StringPiece(const std::string& str)
+	: ptr_(str.data()), length_(static_cast<int>(str.size())) { }
 #endif
-  StringPiece(const char* offset, int len)
-    : ptr_(offset), length_(len) { }
+	StringPiece(const char* offset, int len)
+	: ptr_(offset), length_(len) { }
 
   // data() may return a pointer to a buffer with embedded NULs, and the
   // returned buffer may or may not be null terminated.  Therefore it is
@@ -63,51 +63,51 @@ class StringPiece {
   // terminated string.  Use "as_string().c_str()" if you really need to do
   // this.  Or better yet, change your routine so it does not rely on NUL
   // termination.
-  const char* data() const { return ptr_; }
-  int size() const { return length_; }
-  bool empty() const { return length_ == 0; }
-  const char* begin() const { return ptr_; }
-  const char* end() const { return ptr_ + length_; }
+	const char* data() const { return ptr_; }
+	int size() const { return length_; }
+	bool empty() const { return length_ == 0; }
+	const char* begin() const { return ptr_; }
+	const char* end() const { return ptr_ + length_; }
 
-  void clear() { ptr_ = NULL; length_ = 0; }
-  void set(const char* buffer, int len) { ptr_ = buffer; length_ = len; }
-  void set(const char* str) {
-    ptr_ = str;
-    length_ = static_cast<int>(strlen(str));
-  }
-  void set(const void* buffer, int len) {
-    ptr_ = reinterpret_cast<const char*>(buffer);
-    length_ = len;
-  }
+	void clear() { ptr_ = NULL; length_ = 0; }
+	void set(const char* buffer, int len) { ptr_ = buffer; length_ = len; }
+	void set(const char* str) {
+		ptr_ = str;
+		length_ = static_cast<int>(strlen(str));
+	}
+	void set(const void* buffer, int len) {
+		ptr_ = reinterpret_cast<const char*>(buffer);
+		length_ = len;
+	}
 
-  char operator[](int i) const { return ptr_[i]; }
+	char operator[](int i) const { return ptr_[i]; }
 
-  void remove_prefix(int n) {
-    ptr_ += n;
-    length_ -= n;
-  }
+	void remove_prefix(int n) {
+		ptr_ += n;
+		length_ -= n;
+	}
 
-  void remove_suffix(int n) {
-    length_ -= n;
-  }
+	void remove_suffix(int n) {
+		length_ -= n;
+	}
 
-  bool operator==(const StringPiece& x) const {
-    return ((length_ == x.length_) &&
-            (memcmp(ptr_, x.ptr_, length_) == 0));
-  }
-  bool operator!=(const StringPiece& x) const {
-    return !(*this == x);
-  }
+	bool operator==(const StringPiece& x) const {
+		return ((length_ == x.length_) &&
+		    (memcmp(ptr_, x.ptr_, length_) == 0));
+	}
+	bool operator!=(const StringPiece& x) const {
+		return !(*this == x);
+	}
 
 #define STRINGPIECE_BINARY_PREDICATE(cmp,auxcmp)                             \
   bool operator cmp (const StringPiece& x) const {                           \
     int r = memcmp(ptr_, x.ptr_, length_ < x.length_ ? length_ : x.length_); \
     return ((r auxcmp 0) || ((r == 0) && (length_ cmp x.length_)));          \
   }
-  STRINGPIECE_BINARY_PREDICATE(<,  <);
-  STRINGPIECE_BINARY_PREDICATE(<=, <);
-  STRINGPIECE_BINARY_PREDICATE(>=, >);
-  STRINGPIECE_BINARY_PREDICATE(>,  >);
+	STRINGPIECE_BINARY_PREDICATE(<,  <);
+	STRINGPIECE_BINARY_PREDICATE(<=, <);
+	STRINGPIECE_BINARY_PREDICATE(>=, >);
+	STRINGPIECE_BINARY_PREDICATE(>,  >);
 #undef STRINGPIECE_BINARY_PREDICATE
 
   int compare(const StringPiece& x) const {
@@ -123,20 +123,20 @@ class StringPiece {
     return string(data(), size());
   }
 
-  void CopyToString(string* target) const {
-    target->assign(ptr_, length_);
-  }
+	void CopyToString(string* target) const {
+		target->assign(ptr_, length_);
+	}
 
 #ifndef MUDUO_STD_STRING
-  void CopyToStdString(std::string* target) const {
-    target->assign(ptr_, length_);
-  }
+	void CopyToStdString(std::string* target) const {
+		target->assign(ptr_, length_);
+	}
 #endif
 
   // Does "this" start with "x"
-  bool starts_with(const StringPiece& x) const {
-    return ((length_ >= x.length_) && (memcmp(ptr_, x.ptr_, x.length_) == 0));
-  }
+	bool starts_with(const StringPiece& x) const {
+		return ((length_ >= x.length_) && (memcmp(ptr_, x.ptr_, x.length_) == 0));
+	}
 };
 
 // ------------------------------------------------------------------
@@ -148,17 +148,17 @@ class StringPiece {
 
 #ifdef HAVE_TYPE_TRAITS
 // This makes vector<StringPiece> really fast for some STL implementations
-template<> struct __type_traits<muduo::StringPiece> {
-  typedef __true_type    has_trivial_default_constructor;
-  typedef __true_type    has_trivial_copy_constructor;
-  typedef __true_type    has_trivial_assignment_operator;
-  typedef __true_type    has_trivial_destructor;
-  typedef __true_type    is_POD_type;
+template<> struct __type_traits<StringPiece> {
+	typedef __true_type    has_trivial_default_constructor;
+	typedef __true_type    has_trivial_copy_constructor;
+	typedef __true_type    has_trivial_assignment_operator;
+	typedef __true_type    has_trivial_destructor;
+	typedef __true_type    is_POD_type;
 };
 #endif
 
 // allow StringPiece to be logged
-std::ostream& operator<<(std::ostream& o, const muduo::StringPiece& piece);
+std::ostream& operator<<(std::ostream& o, const StringPiece& piece);
 
 #endif  // MUDUO_BASE_STRINGPIECE_H
 

@@ -1,7 +1,5 @@
 #ifndef MUDUO_BASE_THREAD_H
 #define MUDUO_BASE_THREAD_H
-
-
 #include "Atomic.h"
 #include "Types.h"
 #include "CountDownLatch.h"
@@ -19,7 +17,7 @@ public:
 	~Thread();
 	void start();
 	int join();
-	bool started() const{return started;}
+	bool started() const{return started_;}
 	pid_t tid() const {return tid_;}
 	
 	const string& name() const { return name_;}
@@ -33,8 +31,7 @@ private:
 	ThreadFunc func_;
 	string name_;
 	CountDownLatch latch_;
-	static AtomicInt32 numCreated;
-
-}
+	static AtomicInt32 numCreated_;
+};
 
 #endif

@@ -1,7 +1,5 @@
 #include "CountDownLatch.h"
 
-using namespace muduo;
-
 CountDownLatch::CountDownLatch(int count)
 	: mutex_(),
 	condition_(mutex_),

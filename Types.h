@@ -2,23 +2,23 @@
 #define MUDUO_BASE_TYPES_H
 
 #include <stdint.h>
-//#ifdef MUDUO_STD_STRING
+#ifdef MUDUO_STD_STRING
 #include <string>
-//#else  // !MUDUO_STD_STRING
-//#include <ext/vstring.h>
-//#include <ext/vstring_fwd.h>
-//#endif
+#else  // !MUDUO_STD_STRING
+#include <ext/vstring.h>
+#include <ext/vstring_fwd.h>
+#endif
 
 #ifndef NDEBUG
 #include <assert.h>
 #endif
 
 
-//#ifdef MUDUO_STD_STRING
+#ifdef MUDUO_STD_STRING
 using std::string;
-//#else  // !MUDUO_STD_STRING
-//typedef __gnu_cxx::__sso_string string;
-//#endif
+#else  // !MUDUO_STD_STRING
+typedef __gnu_cxx::__sso_string string;
+#endif
 
 
 template<typename To, typename From>

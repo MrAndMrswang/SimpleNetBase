@@ -13,7 +13,7 @@ mutex_(),cond_(mutex_),callback_(cb)
 EventLoopThread::~EventLoopThread()
 {
 	exiting_ = true;
-	if(loop_! = NULL)
+	if(loop_ != NULL)
 	{
 		loop_->quit();
 		thread_.join();

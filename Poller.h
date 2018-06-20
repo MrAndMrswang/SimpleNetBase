@@ -1,36 +1,42 @@
-#ifndef POLLER_H
-#define POLLER_H
+#ifndef MUDUO_NET_POLLER_H
+#define MUDUO_NET_POLLER_H
+
 #include <map>
 #include <vector>
 #include <boost/noncopyable.hpp>
+
+#include "Timestamp.h"
 #include "EventLoop.h"
 
-struct pollfd;
 class Channel;
 
-class Poller: public boost::noncopyable
-{  
+class Poller : boost::noncopyable
+{
 public:
 	typedef std::vector<Channel*> ChannelList;
-	Poller(EventLoop* Loop);
-	~Poller();
-	//Timestamp poll(int timeoutMs, ChannelList* activeChannels);
-        void poll(int timeoutMs, ChannelList* activeChannels);
-	void updateChannel(Channel * channel);
-	
-	void assertInLoopThread()
+
+	Poller(EventLoop* loop);
+	virtual ~Poller();
+	virtual Timestamp poll(int timeoutMs, ChannelList* activeChannels) = 0;
+	virtual void updateChannel(Channel* channel) = 0;
+	virtual void removeChannel(Channel* channel) = 0;
+	virtual bool hasChannel(Channel* channel) const;
+
+	static Poller* newDefaultPoller(EventLoop* loop);
+
+	void assertInLoopThread() const
 	{
 		ownerLoop_->assertInLoopThread();
 	}
-	
-private:
-	void fillActiveChannels(int numEvents,ChannelList* activeChannels) const;
-	typedef std::vector<struct pollfd> PollFdList;
+
+protected:
 	typedef std::map<int, Channel*> ChannelMap;
-	EventLoop* ownerLoop_;
-	PollFdList pollfds_;
 	ChannelMap channels_;
-	
+
+private:
+	EventLoop* ownerLoop_;
 };
 
-#endif
+
+#endif  // MUDUO_NET_POLLER_H
+

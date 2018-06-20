@@ -2,7 +2,7 @@
 //#include "Logging.h"
 #include "EventLoop.h"
 #include "InetAddress.h"
-#include "SocketsOps.h"
+#include "SocketOps.h"
 
 #include <boost/bind.hpp>
 #include <errno.h>
@@ -17,7 +17,7 @@ acceptChannel_(loop,acceptSocket_.fd()),listenning_(false),idleFd_(::open("/dev/
 	acceptSocket_.setReuseAddr(true);
 	acceptSocket_.setReusePort(reuseport);
 	acceptSocket_.bindAddress(listenAddr);
-	acceptChannel_.setReadCallback(boost::bind(&Acceptor:handleRead,this));
+	acceptChannel_.setReadCallback(boost::bind(&Acceptor::handleRead,this));
 }
 
 Acceptor::~Acceptor()
@@ -32,11 +32,13 @@ void Acceptor::listen()
 	loop_->assertInLoopThread();
 	listenning_ = true;
 	acceptSocket_.listen();
+	printf("Acceptor::serv is listening!\n");
 	acceptChannel_.enableReading();
 }
 
 void Acceptor::handleRead()
-{
+{	
+	printf("Acceptor::serv Acceptor handleReading \n");
 	loop_->assertInLoopThread();
 	InetAddress peerAddr;
 	int connfd = acceptSocket_.accept(&peerAddr);
@@ -53,7 +55,7 @@ void Acceptor::handleRead()
 	}
 	else
 	{
-		LOG_SYSERR<<"in Acceptor::handleRead";
+		//LOG_SYSERR<<"in Acceptor::handleRead";
 		if(errno == EMFILE)
 		{
 			::close(idleFd_);
