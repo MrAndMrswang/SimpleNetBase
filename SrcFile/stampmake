@@ -1,0 +1,13 @@
+objects = teststamp.o Timestamp.o 
+
+teststamp:$(objects)
+	g++ -g -std=c++11 -o teststamp $(objects)
+
+teststamp.o:teststamp.c Timestamp.h
+	g++ -c -g -std=c++11 teststamp.c
+Timestamp.o:Timestamp.c Timestamp.h Types.h
+	g++ -c -g -std=c++11 Timestamp.c
+
+.PHONY:clean
+clean:
+	rm edit $(objects)
