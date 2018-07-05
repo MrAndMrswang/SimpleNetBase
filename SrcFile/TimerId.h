@@ -1,5 +1,8 @@
 #ifndef MUDUO_NET_TIMERID_H
 #define MUDUO_NET_TIMERID_H
+
+#include "copyable.h"
+
 class Timer;
 
 class TimerId 
@@ -16,8 +19,6 @@ public:
 	sequence_(seq)
 	{
 	}
-
-// default copy-ctor, dtor and assignment are okay
 
 friend class TimerQueue;
 

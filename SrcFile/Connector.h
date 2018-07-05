@@ -2,20 +2,17 @@
 #define MUDUO_NET_CONNECTOR_H
 
 #include "InetAddress.h"
-
-#include <boost/enable_shared_from_this.hpp>
-#include <boost/function.hpp>
-#include <boost/noncopyable.hpp>
-#include <boost/scoped_ptr.hpp>
+#include <functional>
+#include <memory>
 
 class Channel;
 class EventLoop;
 
-class Connector : boost::noncopyable,
-                  public boost::enable_shared_from_this<Connector>
+class Connector : noncopyable,
+                  public std::enable_shared_from_this<Connector>
 {
 public:
-	typedef boost::function<void (int sockfd)> NewConnectionCallback;
+	typedef std::function<void (int sockfd)> NewConnectionCallback;
 
 	Connector(EventLoop* loop, const InetAddress& serverAddr);
 	~Connector();
@@ -49,7 +46,7 @@ private:
 	InetAddress serverAddr_;
 	bool connect_; // atomic
 	States state_;  // FIXME: use atomic variable
-	boost::scoped_ptr<Channel> channel_;
+	std::unique_ptr<Channel> channel_;
 	NewConnectionCallback newConnectionCallback_;
 	int retryDelayMs_;
 };

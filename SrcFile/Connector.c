@@ -3,7 +3,6 @@
 #include "Channel.h"
 #include "EventLoop.h"
 #include "SocketOps.h"
-#include <boost/bind.hpp>
 #include <errno.h>
 
 const int Connector::kMaxRetryDelayMs;
@@ -15,6 +14,7 @@ serverAddr_(serverAddr),connect_(false),state_(kDisconnected),retryDelayMs_(kIni
 
 Connector::~Connector()
 {
+	printf("===============Connector::~Connector()==============\n");
 	//LOG_DEBUG<<"dtor["<<this<<"]";
 	assert(!channel_);
 }
@@ -22,7 +22,7 @@ Connector::~Connector()
 void Connector::start()
 {
 	connect_ = true;
-	loop_->runInLoop(boost::bind(&Connector::startInLoop,this));
+	loop_->runInLoop(std::bind(&Connector::startInLoop,this));
 }
 
 void Connector::startInLoop()
@@ -31,10 +31,11 @@ void Connector::startInLoop()
 	assert(state_ == kDisconnected);
 	if(connect_)
 	{
+		
 		connect();
 	}
 	else
-	{
+	{	
 		//LOG_DEBUG<<"do not connect";
 	}
 
@@ -43,7 +44,7 @@ void Connector::startInLoop()
 void Connector::stop()
 {
 	connect_=false;
-	loop_->queueInLoop(boost::bind(&Connector::stopInLoop,this));
+	loop_->queueInLoop(std::bind(&Connector::stopInLoop,this));
 }
 
 void Connector::stopInLoop()
@@ -59,9 +60,11 @@ void Connector::stopInLoop()
 
 void Connector::connect()
 {
+	
 	int sockfd = sockets::createNonblockingOrDie(serverAddr_.family());
 	int ret = sockets::connect(sockfd,serverAddr_.getSockAddr());
 	int savedErrno = (ret == 0) ? 0 : errno;
+	
 	switch (savedErrno)
 	{
 		case 0:
@@ -96,8 +99,6 @@ void Connector::connect()
 		// connectErrorCallback_();
 		break;
 	}
-	
-	
 }
 
 void Connector::restart()
@@ -114,10 +115,10 @@ void Connector::connecting(int sockfd)
 	setState(kConnecting);
 	assert(!channel_);
 	channel_.reset(new Channel(loop_,sockfd));
-	channel_->setWriteCallback(boost::bind(&Connector::handleWrite,this));
-	channel_->setErrorCallback(boost::bind(&Connector::handleError,this));
+	channel_->setWriteCallback(std::bind(&Connector::handleWrite,this));
+	channel_->setErrorCallback(std::bind(&Connector::handleError,this));
 	channel_->enableWriting();
-	printf("Connector::connecting\n");
+	
 }
 
 int Connector::removeAndResetChannel()
@@ -125,7 +126,7 @@ int Connector::removeAndResetChannel()
 	channel_->disableAll();
 	channel_->remove();
 	int sockfd = channel_->fd();
-	loop_->queueInLoop(boost::bind(&Connector::resetChannel,this));
+	loop_->queueInLoop(std::bind(&Connector::resetChannel,this));
 	return sockfd;
 }
 
@@ -193,17 +194,11 @@ void Connector::retry(int sockfd)
 			<< " in " << retryDelayMs_ << " milliseconds. ";*/
 		printf("Connector::retry runAfter\n");
 		loop_->runAfter(retryDelayMs_/1000.0,
-				boost::bind(&Connector::startInLoop, shared_from_this()));
+				std::bind(&Connector::startInLoop, shared_from_this()));
 		retryDelayMs_ = std::min(retryDelayMs_ * 2, kMaxRetryDelayMs);
 	}
 	else
 	{
 		//LOG_DEBUG << "do not connect"<<endl;
 	}
-
 }
-
-
-
-
-

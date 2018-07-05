@@ -5,12 +5,11 @@
 #include "TimerQueue.h"
 #include "SocketOps.h"
 //#include "Logging.h"
-#include <sys/socket.h>//wait to delete
+#include <algorithm>
 #include <unistd.h>
 #include <stdio.h>
 #include <signal.h>
 #include <sys/eventfd.h>
-#include <boost/bind.hpp>
 
 __thread EventLoop* t_loopInThisThread = 0;
 const int kPollTimeMs = 10000;
@@ -82,7 +81,7 @@ wakeupChannel_(new Channel(this,wakeupFd_)),currentActiveChannel_(NULL)
 		
 		t_loopInThisThread = this;
 	}
-	wakeupChannel_->setReadCallback(boost::bind(&EventLoop::handleRead,this));
+	wakeupChannel_->setReadCallback(std::bind(&EventLoop::handleRead,this));
 	wakeupChannel_->enableReading();
 
 }
@@ -182,11 +181,11 @@ size_t EventLoop::queueSize()const
 	return pendingFunctors_.size();
 }
 
-void EventLoop::queueInLoop(const Functor& cb)
+void EventLoop::queueInLoop(Functor cb)
 {
 	{
 		MutexLockGuard lock(mutex_);
-		pendingFunctors_.push_back(cb);
+		pendingFunctors_.push_back(std::move(cb));
 	}
 	if(!isInLoopThread() || callingPendingFunctors_)
 	{
@@ -195,7 +194,7 @@ void EventLoop::queueInLoop(const Functor& cb)
 }
 
 
-void EventLoop::runInLoop(const Functor& cb)
+void EventLoop::runInLoop(Functor cb)
 {
 	if(isInLoopThread())
 	{
@@ -203,7 +202,7 @@ void EventLoop::runInLoop(const Functor& cb)
 	}
 	else
 	{
-		queueInLoop(cb);
+		queueInLoop(std::move(cb));
 	}
 }
 
@@ -225,24 +224,24 @@ void EventLoop::removeChannel(Channel* channel)
 }
 
 
-TimerId EventLoop::runAt(const Timestamp& time, const TimerCallback& cb)
+TimerId EventLoop::runAt(Timestamp time , TimerCallback cb)
 {
 	printf("EventLoop::runAt \n");
-	return timerQueue_->addTimer(cb, time, 0.0);
+	return timerQueue_->addTimer(std::move(cb), time, 0.0);
 }
 
-TimerId EventLoop::runAfter(double delay, const TimerCallback& cb)
+TimerId EventLoop::runAfter(double delay , TimerCallback cb)
 {
 	printf("EventLoop::runAfter %f\n",delay);
 	Timestamp time(addTime(Timestamp::now(), delay));
-	return runAt(time, cb);
+	return runAt(time, std::move(cb));
 }
 
-TimerId EventLoop::runEvery(double interval, const TimerCallback& cb)
+TimerId EventLoop::runEvery(double interval, TimerCallback cb)
 {
 	printf("EventLoop::runEvery %f\n",interval);
 	Timestamp time(addTime(Timestamp::now(), interval));
-	return timerQueue_->addTimer(cb, time, interval);
+	return timerQueue_->addTimer(std::move(cb), time, interval);
 }
 
 void EventLoop::updateChannel(Channel * channel)

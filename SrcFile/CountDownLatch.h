@@ -4,9 +4,7 @@
 #include "Condition.h"
 #include "Mutex.h"
 
-#include <boost/noncopyable.hpp>
-
-class CountDownLatch : boost::noncopyable
+class CountDownLatch : noncopyable
 {
 public:
 	explicit CountDownLatch(int count);

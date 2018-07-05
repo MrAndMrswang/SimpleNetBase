@@ -1,6 +1,7 @@
 #ifndef MUDUO_BASE_TIMESTAMP_H
 #define MUDUO_BASE_TIMESTAMP_H
 #include "Types.h"
+#include "copyable.h"
 #include <boost/operators.hpp>
 ///
 /// Time stamp in UTC, in microseconds resolution.
@@ -8,21 +9,15 @@
 /// This class is immutable.
 /// It's recommended to pass it by value, since it's passed in register on x64.
 ///
-class Timestamp : public boost::less_than_comparable<Timestamp>
+class Timestamp : public boost::less_than_comparable<Timestamp>,
+		  public boost::equality_comparable<Timestamp>
 {
 public:
-	///
-	/// Constucts an invalid Timestamp.
-	///
 	Timestamp()
 	: microSecondsSinceEpoch_(0)
 	{
 	}
 
-	///
-	/// Constucts a Timestamp at specific time
-	///
-	/// @param microSecondsSinceEpoch
 	explicit Timestamp(int64_t microSecondsSinceEpochArg)
 	: microSecondsSinceEpoch_(microSecondsSinceEpochArg)
 	{
@@ -33,21 +28,17 @@ public:
 		std::swap(microSecondsSinceEpoch_, that.microSecondsSinceEpoch_);
 	}
 
-	// default copy/assignment/dtor are Okay
-
 	string toString() const;
 	string toFormattedString(bool showMicroseconds = true) const;
 
 	bool valid() const { return microSecondsSinceEpoch_ > 0; }
 
-	// for internal usage.
 	int64_t microSecondsSinceEpoch() const { return microSecondsSinceEpoch_; }
 	time_t secondsSinceEpoch() const
-	{ return static_cast<time_t>(microSecondsSinceEpoch_ / kMicroSecondsPerSecond); }
+	{ 
+		return static_cast<time_t>(microSecondsSinceEpoch_ / kMicroSecondsPerSecond); 
+	}
 
-	///
-	/// Get time of now.
-	///
 	static Timestamp now();
 	static Timestamp invalid()
 	{

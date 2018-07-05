@@ -20,6 +20,7 @@ using std::string;
 typedef __gnu_cxx::__sso_string string;
 #endif
 
+#include "noncopyable.h"
 
 template<typename To, typename From>
 inline To implicit_cast(From const &f)

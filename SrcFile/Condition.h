@@ -2,11 +2,10 @@
 #define MUDUO_BASE_CONDITION_H
 
 #include "Mutex.h"
-#include <boost/noncopyable.hpp>
 #include <pthread.h>
 
 
-class Condition : boost::noncopyable
+class Condition :noncopyable
 {
 public:
 	explicit Condition(MutexLock& mutex)

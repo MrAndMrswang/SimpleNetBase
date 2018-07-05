@@ -1,12 +1,12 @@
 #ifndef MUDUO_BASE_ATOMIC_H
 #define MUDUO_BASE_ATOMIC_H
 
-#include <boost/noncopyable.hpp>
+#include "noncopyable.h"
 #include <stdint.h>
 
 
 template<typename T>
-class AtomicIntegerT : boost::noncopyable
+class AtomicIntegerT : noncopyable
 {
 public:
 	AtomicIntegerT()

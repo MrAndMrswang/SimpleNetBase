@@ -1,9 +1,8 @@
 #ifndef EVENTLOOP_H
 #define EVENTLOOP_H
 #include <boost/any.hpp>
-#include <boost/function.hpp>
-#include <boost/noncopyable.hpp>
-#include <boost/scoped_ptr.hpp>
+#include <functional>
+#include <atomic>
 #include "Mutex.h"
 #include "CurrentThread.h"
 #include "Timestamp.h"
@@ -14,16 +13,17 @@
 class Poller;
 class Channel;
 class TimerQueue;
-class EventLoop: public boost::noncopyable
+class EventLoop : noncopyable
 {
 public:
-	typedef boost::function<void()> Functor;
+	typedef std::function<void()> Functor;
 
 	void assertInLoopThread()
 	{
-		//printf(" EventLoop.h assertInLoopThread()\n");
+		
 		if(!isInLoopThread())
 		{
+			//printf(" EventLoop : : abortNotInLoopThread()\n");
 			abortNotInLoopThread();
 		}
 	}
@@ -48,15 +48,15 @@ public:
 	void loop();
 	Timestamp pollReturnTime() const { return pollReturnTime_; }
 
-	void queueInLoop(const Functor& cb);
+	void queueInLoop(Functor cb);
 	size_t queueSize() const;
 	void quit();
 
-	void runInLoop(const Functor& cb);
+	void runInLoop(Functor cb);
 	void removeChannel(Channel* channel);
-	TimerId runAt(const Timestamp& time, const TimerCallback& cb);
-	TimerId runAfter(double delay, const TimerCallback& cb);
-	TimerId runEvery(double interval, const TimerCallback& cb);
+	TimerId runAt(Timestamp time, TimerCallback cb);
+	TimerId runAfter(double delay, TimerCallback cb);
+	TimerId runEvery(double interval, TimerCallback cb);
 
 	void setContext(const boost::any& context) { context_ = context; }
 	void updateChannel(Channel * channel);
@@ -81,17 +81,17 @@ private:
 
 	//acquire Poller active and this activechannel
 	Timestamp pollReturnTime_;
-	boost::scoped_ptr<Poller> poller_;
+	std::unique_ptr<Poller> poller_;
 	std::vector<Functor> pendingFunctors_;
 	void printActiveChannels() const;
 	
-	bool quit_;
+	std::atomic<bool> quit_;
 
-	boost::scoped_ptr<TimerQueue> timerQueue_;
+	std::unique_ptr<TimerQueue> timerQueue_;
 	const pid_t threadId_;
 
 	int wakeupFd_;
-	boost::scoped_ptr<Channel> wakeupChannel_;
+	std::unique_ptr<Channel> wakeupChannel_;
 
 };
 #endif

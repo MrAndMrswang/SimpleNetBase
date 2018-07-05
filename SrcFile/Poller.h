@@ -3,14 +3,13 @@
 
 #include <map>
 #include <vector>
-#include <boost/noncopyable.hpp>
 
 #include "Timestamp.h"
 #include "EventLoop.h"
 
 class Channel;
 
-class Poller : boost::noncopyable
+class Poller : noncopyable
 {
 public:
 	typedef std::vector<Channel*> ChannelList;

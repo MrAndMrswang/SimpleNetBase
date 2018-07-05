@@ -1,22 +1,20 @@
 #ifndef MUDUO_NET_TCPCLIENT_H
 #define MUDUO_NET_TCPCLIENT_H
 
-#include <boost/noncopyable.hpp>
-
 #include "Mutex.h"
 #include "TcpConnection.h"
 
 class Connector;
-typedef boost::shared_ptr<Connector> ConnectorPtr;
+typedef std::shared_ptr<Connector> ConnectorPtr;
 
-class TcpClient : boost::noncopyable
+class TcpClient : noncopyable
 {
 public:
 	// TcpClient(EventLoop* loop);
 	// TcpClient(EventLoop* loop, const string& host, uint16_t port);
 	TcpClient(EventLoop* loop,
-	    const InetAddress& serverAddr,
-	    const string& nameArg);
+		    const InetAddress& serverAddr,
+		    const string& nameArg);
 	~TcpClient();  // force out-line dtor, for scoped_ptr members.
 
 	void connect();
@@ -38,18 +36,18 @@ public:
 
 	/// Set connection callback.
 	/// Not thread safe.
-	void setConnectionCallback(const ConnectionCallback& cb)
-	{ connectionCallback_ = cb; }
+	void setConnectionCallback(ConnectionCallback cb)
+	{ connectionCallback_ = std::move(cb); }
 
 	/// Set message callback.
 	/// Not thread safe.
-	void setMessageCallback(const MessageCallback& cb)
-	{ messageCallback_ = cb; }
+	void setMessageCallback(MessageCallback cb)
+	{ messageCallback_ = std::move(cb); }
 
 	/// Set write complete callback.
 	/// Not thread safe.
-	void setWriteCompleteCallback(const WriteCompleteCallback& cb)
-	{ writeCompleteCallback_ = cb; }
+	void setWriteCompleteCallback(WriteCompleteCallback cb)
+	{ writeCompleteCallback_ = std::move(cb); }
 
 /*#ifdef __GXX_EXPERIMENTAL_CXX0X__
 	void setConnectionCallback(ConnectionCallback&& cb)

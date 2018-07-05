@@ -2,7 +2,7 @@
 #define MUDUO_BASE_MUTEX_H
 
 #include "CurrentThread.h"
-#include <boost/noncopyable.hpp>
+#include "noncopyable.h"
 #include <assert.h>
 #include <pthread.h>
 
@@ -30,7 +30,7 @@ __END_DECLS
 #endif // CHECK_PTHREAD_RETURN_VALUE
 
 
-class MutexLock : boost::noncopyable
+class MutexLock : noncopyable
 {
 public:
 	MutexLock()
@@ -75,7 +75,7 @@ public:
 private:
 	friend class Condition;
 
-	class UnassignGuard : boost::noncopyable
+	class UnassignGuard : noncopyable
 	{
 	public:
 		UnassignGuard(MutexLock& owner)
@@ -107,7 +107,7 @@ private:
 	pid_t holder_;
 };
 
-class MutexLockGuard : boost::noncopyable
+class MutexLockGuard : noncopyable
 {
 public:
 	explicit MutexLockGuard(MutexLock& mutex)

@@ -1,7 +1,6 @@
 #include "EPollPoller.h"
 //#include <muduo/base/Logging.h>
 #include "Channel.h"
-#include <boost/static_assert.hpp>
 
 #include <assert.h>
 #include <errno.h>
@@ -9,12 +8,12 @@
 #include <sys/epoll.h>
 #include <unistd.h>
 
-BOOST_STATIC_ASSERT(EPOLLIN == POLLIN);
-BOOST_STATIC_ASSERT(EPOLLPRI == POLLPRI);
-BOOST_STATIC_ASSERT(EPOLLOUT == POLLOUT);
-BOOST_STATIC_ASSERT(EPOLLRDHUP == POLLRDHUP);
-BOOST_STATIC_ASSERT(EPOLLERR == POLLERR);
-BOOST_STATIC_ASSERT(EPOLLHUP == POLLHUP);
+static_assert(EPOLLIN == POLLIN,        "epoll uses same flag values as poll");
+static_assert(EPOLLPRI == POLLPRI,      "epoll uses same flag values as poll");
+static_assert(EPOLLOUT == POLLOUT,      "epoll uses same flag values as poll");
+static_assert(EPOLLRDHUP == POLLRDHUP,  "epoll uses same flag values as poll");
+static_assert(EPOLLERR == POLLERR,      "epoll uses same flag values as poll");
+static_assert(EPOLLHUP == POLLHUP,      "epoll uses same flag values as poll");
 
 const int kNew = -1;
 const int kAdded = 1;
@@ -164,8 +163,7 @@ void EPollPoller::update(int operation, Channel* channel)
 	int fd = channel->fd();
 	//LOG_TRACE << "epoll_ctl op = " << operationToString(operation)
 	//<< " fd = " << fd << " event = { " << channel->eventsToString() << " }";
-	int test;//delete
-	if ((test=::epoll_ctl(epollfd_, operation, fd, &event)) < 0)
+	if ((::epoll_ctl(epollfd_, operation, fd, &event)) < 0)
 	{
 		if (operation == EPOLL_CTL_DEL)
 		{
@@ -176,7 +174,6 @@ void EPollPoller::update(int operation, Channel* channel)
 			//LOG_SYSFATAL << "epoll_ctl op =" << operationToString(operation) << " fd =" << fd;
 		}
 	}
-	printf("epoll_ctl return :%d \n",test);
 }
 
 const char* EPollPoller::operationToString(int op)

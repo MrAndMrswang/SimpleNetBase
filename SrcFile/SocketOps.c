@@ -2,11 +2,12 @@
 //#include "Logging.h"
 #include "Types.h"
 #include "Endian.h"
-#include <string.h> 
+
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>  // snprintf
 #include <strings.h>  // bzero
+#include <string.h>  // bzero
 #include <sys/socket.h>
 #include <sys/uio.h>  // readv
 #include <unistd.h>
@@ -186,7 +187,7 @@ void sockets::toIpPort(char* buf, size_t size,
                        const struct sockaddr* addr)
 {
 	toIp(buf,size, addr);
-	size_t end = ::strlen(buf);
+	 size_t end = ::strlen(buf);
 	const struct sockaddr_in* addr4 = sockaddr_in_cast(addr);
 	uint16_t port = sockets::networkToHost16(addr4->sin_port);
 	assert(size > end);

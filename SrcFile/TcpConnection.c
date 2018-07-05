@@ -5,7 +5,6 @@
 #include "Socket.h"
 #include "SocketOps.h"
 
-#include <boost/bind.hpp>
 #include <errno.h>
 
 void defaultConnectionCallback(const TcpConnectionPtr& conn)
@@ -24,18 +23,20 @@ TcpConnection::TcpConnection(EventLoop* loop,const string& nameArg,int sockfd,co
 		socket_(new Socket(sockfd)),channel_(new Channel(loop,sockfd)),
 		localAddr_(localAddr),peerAddr_(peerAddr),highWaterMark_(64*1024*1024)
 {
-	channel_->setReadCallback(boost::bind(&TcpConnection::handleRead,this,_1));
-	channel_->setWriteCallback(boost::bind(&TcpConnection::handleWrite,this));
-	channel_->setCloseCallback(boost::bind(&TcpConnection::handleClose,this));
-	channel_->setErrorCallback(boost::bind(&TcpConnection::handleError,this));
+	channel_->setReadCallback(std::bind(&TcpConnection::handleRead,this,_1));
+	channel_->setWriteCallback(std::bind(&TcpConnection::handleWrite,this));
+	channel_->setCloseCallback(std::bind(&TcpConnection::handleClose,this));
+	channel_->setErrorCallback(std::bind(&TcpConnection::handleError,this));
 	//LOG_DEBUG<<"TcpConnection::ctor["<< name_ <<"] at "<<this <<" fd= " <<sockfd;
 	socket_->setKeepAlive(true);
+	
 }
 
 TcpConnection::~TcpConnection()
 {
 	//LOG_DEBUG << "TcpConnection::dtor[" <<  name_ << "] at " << this
 		//<< " fd=" << channel_->fd()<< " state=" << stateToString();
+	printf("TcpConnection::~TcpConnection()\n");
 	assert(state_ == kDisconnected);
 }
 
@@ -61,16 +62,20 @@ void TcpConnection::send(const void * data, int len)
 
 void TcpConnection::send(const StringPiece& message)
 {
+	
 	if(state_ == kConnected)
 	{
+		
 		if(loop_->isInLoopThread())
 		{
+			
 			sendInLoop(message);
 		}
 		else
 		{
-			loop_->runInLoop(boost::bind(&TcpConnection::sendInLoop,
-				this,message.as_string()));
+		void (TcpConnection::*fp)(const StringPiece& message) = &TcpConnection::sendInLoop;
+		loop_->runInLoop(std::bind(fp,this,message.as_string()));
+                    
 		}
 	}
 }
@@ -87,8 +92,11 @@ void TcpConnection::send(Buffer *buf)
 		}
 		else
 		{
-			loop_->runInLoop(boost::bind(&TcpConnection::sendInLoop,
-				this,buf->retrieveAllAsString()));
+
+			void (TcpConnection::*fp)(const StringPiece& message)
+				 = &TcpConnection::sendInLoop;
+			loop_->runInLoop(
+				std::bind(fp,this,buf->retrieveAllAsString()));
 		}
 	}
 }
@@ -100,6 +108,7 @@ void TcpConnection::sendInLoop(const StringPiece& message)
 
 void TcpConnection::sendInLoop(const void* data, size_t len)
 {
+
 	loop_->assertInLoopThread();
 	ssize_t nwrote = 0;
 	size_t remaining = len;
@@ -114,10 +123,10 @@ void TcpConnection::sendInLoop(const void* data, size_t len)
 		nwrote = sockets::write(channel_->fd(),data,len);
 		if(nwrote >= 0)
 		{
-			remaining = len -nwrote;
+			remaining = len - nwrote;
 			if(remaining == 0 && writeCompleteCallback_)
 			{
-				loop_->queueInLoop(boost::bind(writeCompleteCallback_,shared_from_this()));
+				loop_->queueInLoop(std::bind(writeCompleteCallback_,shared_from_this()));
 			}
 		}
 		else
@@ -138,10 +147,12 @@ void TcpConnection::sendInLoop(const void* data, size_t len)
 	if(!faultError && remaining>0)
 	{
 		size_t oldLen = outputBuffer_.readableBytes();
-		if(oldLen+remaining >= highWaterMark_ && highWaterMarkCallback_)
+		if(oldLen+remaining >= highWaterMark_  
+			&& oldLen < highWaterMark_
+			&& highWaterMarkCallback_)
 		{
-			loop_->queueInLoop(boost::bind(highWaterMarkCallback_
-			,shared_from_this(),oldLen+remaining));
+			loop_->queueInLoop(std::bind(highWaterMarkCallback_
+				,shared_from_this(),oldLen+remaining));
 		}
 		outputBuffer_.append(static_cast<const char*>(data)+nwrote,remaining);
 		if(!channel_->isWriting())
@@ -156,7 +167,7 @@ void TcpConnection::shutdown()
 	if(state_  = kConnected)
 	{
 		setState(kDisconnecting);
-		loop_->runInLoop(boost::bind(&TcpConnection::shutdownInLoop,this));
+		loop_->runInLoop(std::bind(&TcpConnection::shutdownInLoop,this));
 	}
 }
 
@@ -174,7 +185,7 @@ void TcpConnection::forceClose()
 	if(state_ == kConnected || state_ == kDisconnecting)
 	{
 		setState(kDisconnecting);
-		loop_->queueInLoop(boost::bind(&TcpConnection::forceCloseInLoop,shared_from_this()));
+		loop_->queueInLoop(std::bind(&TcpConnection::forceCloseInLoop,shared_from_this()));
 	}
 }
 
@@ -216,7 +227,7 @@ void TcpConnection::setTcpNoDelay(bool on)
 
 void TcpConnection::startRead()
 {
-	loop_->runInLoop(boost::bind(&TcpConnection::startReadInLoop,this));
+	loop_->runInLoop(std::bind(&TcpConnection::startReadInLoop,this));
 }
 
 void TcpConnection::startReadInLoop()
@@ -231,7 +242,7 @@ void TcpConnection::startReadInLoop()
 
 void TcpConnection::stopRead()
 {
-	loop_->runInLoop(boost::bind(&TcpConnection::stopReadInLoop,this));
+	loop_->runInLoop(std::bind(&TcpConnection::stopReadInLoop,this));
 }
 
 void TcpConnection::stopReadInLoop()
@@ -252,17 +263,19 @@ void TcpConnection::connectEstablished()
 	channel_->tie(shared_from_this());
 	channel_->enableReading();
 	connectionCallback_(shared_from_this());
+	printf("TcpConnection::connectEstablished()\n");
 }
 
 
 void TcpConnection::connectDestroyed()
-{
+{printf("TcpConnection::connectDestroyed()\n");
 	loop_->assertInLoopThread();
 	if(state_==kConnected)
 	{
 		setState(kDisconnected);
 		channel_->disableAll();	
 		connectionCallback_(shared_from_this());
+		
 	}
 	channel_->remove();
 }
@@ -294,7 +307,7 @@ void TcpConnection::handleWrite()
 	if(channel_->isWriting())
 	{
 		ssize_t n = sockets::write(channel_->fd(),
-			outputBuffer_.peek(),outputBuffer_.readableBytes());
+				outputBuffer_.peek(),outputBuffer_.readableBytes());
 		if(n>0)
 		{
 			outputBuffer_.retrieve(n);
@@ -304,7 +317,7 @@ void TcpConnection::handleWrite()
 				if(writeCompleteCallback_)
 				{
 					loop_->queueInLoop(
-						boost::bind(writeCompleteCallback_,
+						std::bind(writeCompleteCallback_,
 								shared_from_this()));		
 				}
 				if(state_ == kDisconnecting)
@@ -333,6 +346,7 @@ void TcpConnection::handleClose()
 	channel_->disableAll();
 	TcpConnectionPtr guardThis(shared_from_this());
 	connectionCallback_(guardThis);
+	printf("void TcpConnection::handleClose()");
 	closeCallback_(guardThis);
 }
 

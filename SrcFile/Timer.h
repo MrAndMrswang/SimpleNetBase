@@ -1,15 +1,15 @@
 #ifndef MUDUO_NET_TIMER_H
 #define MUDUO_NET_TIMER_H
 
-#include <boost/noncopyable.hpp>
 #include "Atomic.h"
 #include "Timestamp.h"
 #include "Callbacks.h"
-class Timer : boost::noncopyable
+
+class Timer : noncopyable
 {
 public:
   Timer(const TimerCallback& cb, Timestamp when, double interval)
-    : callback_(cb), //outtime back function
+    : callback_(std::move(cb)), //outtime back function
       expiration_(when),	//outtime time
       interval_(interval), //repeat time
       repeat_(interval > 0.0), //judge if repeat

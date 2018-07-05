@@ -3,12 +3,12 @@
 #include "Connector.h"
 #include "EventLoop.h"
 #include "SocketOps.h"
-#include <boost/bind.hpp>
+
 #include <stdio.h>  
 
 void detailremoveConnection(EventLoop* loop, const TcpConnectionPtr& conn)
 {
-	loop->queueInLoop(boost::bind(&TcpConnection::connectDestroyed, conn));
+	loop->queueInLoop(std::bind(&TcpConnection::connectDestroyed, conn));
 }
 
 void detailremoveConnector(const ConnectorPtr& connector)
@@ -30,7 +30,7 @@ TcpClient::TcpClient(EventLoop* loop,
 	nextConnId_(1)
 {
 	connector_->setNewConnectionCallback(
-		boost::bind(&TcpClient::newConnection, this, _1));
+		std::bind(&TcpClient::newConnection, this, _1));
   // FIXME setConnectFailedCallback
  /* LOG_INFO << "TcpClient::TcpClient[" << name_
            << "] - connector " << get_pointer(connector_);*/
@@ -49,23 +49,16 @@ TcpClient::~TcpClient()
 	}
 	if (conn)
 	{
-		assert(loop_ == conn->getLoop());
-		// FIXME: not 100% safe, if we are in different thread
-		CloseCallback cb = boost::bind(&detailremoveConnection, loop_, _1);
-		loop_->runInLoop(
-		boost::bind(&TcpConnection::setCloseCallback, conn, cb));
-		if (unique)
-		{
 			conn->forceClose();
-		}
 	}
 	else
 	{
 		connector_->stop();
 		// FIXME: HACK
-		printf("~Tcpclient::\n");
-		loop_->runAfter(1, boost::bind(&detailremoveConnector, connector_));
+		
+		loop_->runAfter(1, std::bind(&detailremoveConnector, connector_));
 	}
+printf("~Tcpclient::\n");
 }
 
 void TcpClient::connect()
@@ -118,12 +111,14 @@ void TcpClient::newConnection(int sockfd)
 	conn->setMessageCallback(messageCallback_);
 	conn->setWriteCompleteCallback(writeCompleteCallback_);
 	conn->setCloseCallback(
-	boost::bind(&TcpClient::removeConnection, this, _1)); // FIXME: unsafe
+		std::bind(&TcpClient::removeConnection, this, _1)); // FIXME: unsafe
 	{
 		MutexLockGuard lock(mutex_);
 		connection_ = conn;
+		
 	}
 	conn->connectEstablished();
+	
 }
 
 void TcpClient::removeConnection(const TcpConnectionPtr& conn)
@@ -136,7 +131,7 @@ void TcpClient::removeConnection(const TcpConnectionPtr& conn)
 		connection_.reset();
 	}
 
-	loop_->queueInLoop(boost::bind(&TcpConnection::connectDestroyed, conn));
+	loop_->queueInLoop(std::bind(&TcpConnection::connectDestroyed, conn));
 	if (retry_ && connect_)
 	{
 		/*LOG_INFO << "TcpClient::connect[" << name_ << "] - Reconnecting to "

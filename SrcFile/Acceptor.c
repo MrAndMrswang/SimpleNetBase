@@ -4,7 +4,6 @@
 #include "InetAddress.h"
 #include "SocketOps.h"
 
-#include <boost/bind.hpp>
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -17,7 +16,7 @@ acceptChannel_(loop,acceptSocket_.fd()),listenning_(false),idleFd_(::open("/dev/
 	acceptSocket_.setReuseAddr(true);
 	acceptSocket_.setReusePort(reuseport);
 	acceptSocket_.bindAddress(listenAddr);
-	acceptChannel_.setReadCallback(boost::bind(&Acceptor::handleRead,this));
+	acceptChannel_.setReadCallback(std::bind(&Acceptor::handleRead,this));
 }
 
 Acceptor::~Acceptor()

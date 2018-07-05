@@ -1,34 +1,33 @@
 #ifndef CHANNEL_H
 #define CHANNEL_H
-#include <boost/noncopyable.hpp>
-#include <boost/function.hpp>
-#include <boost/shared_ptr.hpp>
-#include <boost/weak_ptr.hpp>
 
+#include <functional>
+#include <memory>
 #include "Timestamp.h"
+#include "noncopyable.h"
 class EventLoop;
 
-class Channel: public boost::noncopyable
+class Channel :  noncopyable
 {
 public:
-	typedef boost::function<void()> EventCallback;
-	typedef boost::function<void(Timestamp)> ReadEventCallback;
+	typedef std::function<void()> EventCallback;
+	typedef std::function<void(Timestamp)> ReadEventCallback;
 	//init channel info
 	Channel(EventLoop* loop, int fd);
 	~Channel();
 	//handleEvent() to exec corresponding function
 	void handleEvent(Timestamp receiveTime);
 	//set read write errro function
-	void setReadCallback(const ReadEventCallback& cb)
-	{ readCallback_ = cb; }
-	void setWriteCallback(const EventCallback& cb)
-	{ writeCallback_ = cb; }
-	void setCloseCallback(const EventCallback& cb)
-	{ closeCallback_ = cb; }
-	void setErrorCallback(const EventCallback& cb)
-	{ errorCallback_ = cb; }
+	void setReadCallback(const ReadEventCallback cb)
+	{ readCallback_ = std::move(cb); }
+	void setWriteCallback(const EventCallback cb)
+	{ writeCallback_ = std::move(cb); }
+	void setCloseCallback(const EventCallback cb)
+	{ closeCallback_ = std::move(cb); }
+	void setErrorCallback(const EventCallback cb)
+	{ errorCallback_ = (cb); }
 	
-	void tie(const boost::shared_ptr<void> &);
+	void tie(const std::shared_ptr<void> &);
 	//return  struct poll
 	int fd() const {return fd_;}
 	int events() const { return events_; }
@@ -74,7 +73,7 @@ private:
 	int index_;
 	bool logHup_;
 
-	boost::weak_ptr<void> tie_;
+	std::weak_ptr<void> tie_;
 	bool tied_;
 	bool eventHandling_;
 	bool addedToLoop_;

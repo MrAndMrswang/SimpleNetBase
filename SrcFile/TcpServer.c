@@ -5,7 +5,6 @@
 #include "EventLoopThreadPool.h"
 #include "SocketOps.h"
 
-#include <boost/bind.hpp>
 #include <stdio.h>
 
 TcpServer::TcpServer(EventLoop* loop,const InetAddress& listenAddr,const string& nameArg,Option option)
@@ -14,18 +13,18 @@ TcpServer::TcpServer(EventLoop* loop,const InetAddress& listenAddr,const string&
 	threadPool_(new EventLoopThreadPool(loop,name_)),connectionCallback_(defaultConnectionCallback),
 	messageCallback_(defaultMessageCallback),nextConnId_(1)
 	{
-		acceptor_->setNewConnectionCallback(boost::bind(&TcpServer::newConnection,this,_1,_2));
+		acceptor_->setNewConnectionCallback(std::bind(&TcpServer::newConnection,this,_1,_2));
 	}
 
 TcpServer::~TcpServer()
 {
 	loop_->assertInLoopThread();
 	//LOG_TRACE<<"TcpServer::~TcpServer["<<name_<<"] destructing";
-	for(ConnectionMap::iterator it(connections_.begin());it != connections_.end();++it)
+	for(auto& it : connections_)
 	{
-		TcpConnectionPtr conn(it->second);
-		it->second.reset();
-		conn->getLoop()->runInLoop(boost::bind(&TcpConnection::connectDestroyed,conn));
+		TcpConnectionPtr conn(it.second);
+		it.second.reset();
+		conn->getLoop()->runInLoop(std::bind(&TcpConnection::connectDestroyed,conn));
 	}
 	
 }
@@ -42,7 +41,7 @@ void TcpServer::start()
 	{
 		threadPool_->start(threadInitCallback_);
 		assert(!acceptor_->listenning());
-		loop_->runInLoop(boost::bind(&Acceptor::listen,get_pointer(acceptor_)));
+		loop_->runInLoop(std::bind(&Acceptor::listen,get_pointer(acceptor_)));
 	}
 }
 
@@ -65,15 +64,15 @@ void TcpServer::newConnection(int sockfd, const InetAddress& peerAddr)
 	conn->setConnectionCallback(connectionCallback_);
 	conn->setMessageCallback(messageCallback_);
 	conn->setWriteCompleteCallback(writeCompleteCallback_);
-	conn->setCloseCallback(boost::bind(&TcpServer::removeConnection,this,_1));
-	ioLoop->runInLoop(boost::bind(&TcpConnection::connectEstablished,conn));
+	conn->setCloseCallback(std::bind(&TcpServer::removeConnection,this,_1));
+	ioLoop->runInLoop(std::bind(&TcpConnection::connectEstablished,conn));
 }
 
 
 void TcpServer::removeConnection(const TcpConnectionPtr& conn)
 {
 	// FIXME: unsafe
-	loop_->runInLoop(boost::bind(&TcpServer::removeConnectionInLoop,this,conn));
+	loop_->runInLoop(std::bind(&TcpServer::removeConnectionInLoop,this,conn));
 }
 
 
@@ -86,5 +85,5 @@ void TcpServer::removeConnectionInLoop(const TcpConnectionPtr& conn)
 	(void)n;
 	assert(n==1);
 	EventLoop* ioLoop = conn->getLoop();
-	ioLoop->queueInLoop(boost::bind(&TcpConnection::connectDestroyed,conn));
+	ioLoop->queueInLoop(std::bind(&TcpConnection::connectDestroyed,conn));
 } 

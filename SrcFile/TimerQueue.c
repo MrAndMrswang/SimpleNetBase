@@ -1,19 +1,17 @@
-
 #include "TimerQueue.h"
 
 //#include "Logging.h"
+
 #include "EventLoop.h"
 #include "Timer.h"
 #include "TimerId.h"
-
-#include <boost/bind.hpp>
 
 #include <sys/timerfd.h>
 #include <unistd.h>
 
 int createTimerfd()
 {
-	int timerfd = ::timerfd_create(CLOCK_MONOTONIC,TFD_NONBLOCK | TFD_CLOEXEC);
+	int timerfd = ::timerfd_create(CLOCK_MONOTONIC , TFD_NONBLOCK | TFD_CLOEXEC);
 	if(timerfd<0)
 	{
 		//LOG_SYSFATAL<<"Failed in timerfd create";
@@ -29,15 +27,15 @@ struct timespec howMuchTimeFromNow(Timestamp when)
 		microseconds = 100;
 	}
 	struct timespec ts;
-	ts.tv_sec = static_cast<time_t>(microseconds/Timestamp::kMicroSecondsPerSecond);
-	ts.tv_nsec = static_cast<long>((microseconds% Timestamp::kMicroSecondsPerSecond)*1000);
+	ts.tv_sec = static_cast<time_t>(microseconds / Timestamp::kMicroSecondsPerSecond);
+	ts.tv_nsec = static_cast<long>((microseconds % Timestamp::kMicroSecondsPerSecond)*1000);
 	return ts;
 }
 
 void readTimerfd(int timerfd,Timestamp now)
 {
 	uint64_t howmany;
-	ssize_t n = ::read(timerfd,&howmany,sizeof howmany);
+	ssize_t n = ::read(timerfd , &howmany , sizeof howmany);
 	//LOG_TRACE<<"TimerQueue::handleRead()"<<howmany<<" at " << now.toString();
 	if (n != sizeof howmany)
 	{
@@ -61,10 +59,10 @@ void resetTimerfd(int timerfd, Timestamp expiration)
 
 
 
-TimerId TimerQueue::addTimer(const TimerCallback& cb,Timestamp when,double interval)
+TimerId TimerQueue::addTimer(TimerCallback cb,Timestamp when,double interval)
 {
-	Timer* timer = new Timer(cb,when,interval);
-	loop_->runInLoop(boost::bind(&TimerQueue::addTimerInLoop,this,timer));
+	Timer* timer = new Timer(std::move(cb),when,interval);
+	loop_->runInLoop(std::bind(&TimerQueue::addTimerInLoop,this,timer));
 	return TimerId(timer, timer->sequence());
 }
 
@@ -81,7 +79,7 @@ void TimerQueue::addTimerInLoop(Timer* timer)
 
 void TimerQueue::cancel(TimerId timerId)
 {
-	loop_->runInLoop(boost::bind(&TimerQueue::cancelInLoop,this,timerId));
+	loop_->runInLoop(std::bind(&TimerQueue::cancelInLoop,this,timerId));
 }
 
 void TimerQueue::cancelInLoop(TimerId timerId)
@@ -135,13 +133,16 @@ void TimerQueue::handleRead()
 	readTimerfd(timerfd_,now);
 
 	std::vector<Entry> expired = getExpired(now);
+
 	callingExpiredTimers_ = true;
 	cancelingTimers_.clear();
+
 	for(std::vector<Entry>::iterator it = expired.begin();it != expired.end();++it)
 	{
 		it->second->run();
 	}
 	callingExpiredTimers_ = false;
+
 	reset(expired,now);
 }
 
@@ -204,7 +205,7 @@ TimerQueue::TimerQueue(EventLoop* loop)
     callingExpiredTimers_(false)
 {
   timerfdChannel_.setReadCallback(
-      boost::bind(&TimerQueue::handleRead, this));
+      std::bind(&TimerQueue::handleRead, this));
   // we are always reading the timerfd, we disarm it with timerfd_settime.
   timerfdChannel_.enableReading();
 }
@@ -219,13 +220,4 @@ TimerQueue::~TimerQueue()
 		delete it->second;
 	}
 }
-
-
-
-
-
-
-
-
-
 

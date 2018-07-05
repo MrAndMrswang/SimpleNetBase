@@ -4,16 +4,15 @@
 #include "Types.h"
 #include "CountDownLatch.h"
 
-#include <boost/function.hpp>
-#include <boost/noncopyable.hpp>
-#include <boost/shared_ptr.hpp>
+#include <functional>
+#include <memory>
 #include <pthread.h>
 
-class Thread: boost::noncopyable
+class Thread : noncopyable
 {
 public:
-	typedef boost::function<void ()> ThreadFunc;
-	explicit Thread(const ThreadFunc&, const string& name = string());
+	typedef std::function<void ()> ThreadFunc;
+	explicit Thread(ThreadFunc, const string& name = string());
 	~Thread();
 	void start();
 	int join();
@@ -31,6 +30,7 @@ private:
 	ThreadFunc func_;
 	string name_;
 	CountDownLatch latch_;
+
 	static AtomicInt32 numCreated_;
 };
 

@@ -4,9 +4,6 @@
 #include "Atomic.h"
 #include "Types.h"
 #include "TcpConnection.h"
-#include <boost/noncopyable.hpp>
-#include <boost/scoped_ptr.hpp>
-#include <boost/shared_ptr.hpp>
 
 #include <map>
 
@@ -15,10 +12,10 @@ class EventLoop;
 class EventLoopThreadPool;
 
 
-class TcpServer : boost::noncopyable
+class TcpServer : noncopyable
 {
-	public:
-	typedef boost::function<void(EventLoop*)> ThreadInitCallback;
+public:
+	typedef std::function<void(EventLoop*)> ThreadInitCallback;
 	enum Option
 	{
 		kNoReusePort,
@@ -40,7 +37,7 @@ class TcpServer : boost::noncopyable
 	void setThreadInitCallback(const ThreadInitCallback& cb)
 	{ threadInitCallback_ = cb; }
 	/// valid after calling start()
-	boost::shared_ptr<EventLoopThreadPool> threadPool()
+	std::shared_ptr<EventLoopThreadPool> threadPool()
 	{ return threadPool_; }
 
 	void start();
@@ -54,7 +51,7 @@ class TcpServer : boost::noncopyable
 	void setWriteCompleteCallback(const WriteCompleteCallback& cb)
 	{ writeCompleteCallback_ = cb; }
 
- private:
+private:
 
 	void newConnection(int sockfd, const InetAddress& peerAddr);
 	void removeConnection(const TcpConnectionPtr& conn);
@@ -65,8 +62,8 @@ class TcpServer : boost::noncopyable
 	EventLoop* loop_;  // the acceptor loop
 	const string ipPort_;
 	const string name_;
-	boost::scoped_ptr<Acceptor> acceptor_; // avoid revealing Acceptor
-	boost::shared_ptr<EventLoopThreadPool> threadPool_;
+	std::unique_ptr<Acceptor> acceptor_; // avoid revealing Acceptor
+	std::shared_ptr<EventLoopThreadPool> threadPool_;
 	ConnectionCallback connectionCallback_;
 	MessageCallback messageCallback_;
 	WriteCompleteCallback writeCompleteCallback_;

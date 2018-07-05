@@ -3,24 +3,25 @@
 
 #include <set>
 #include <vector>
-#include <boost/noncopyable.hpp>
+
+#include "noncopyable.h"
 #include "Mutex.h"
 #include "Timestamp.h"
 #include "Callbacks.h"
 #include "Channel.h"
+
 class EventLoop;
 class Timer;
 class TimerId;
 
-class TimerQueue: boost::noncopyable
+class TimerQueue : noncopyable
 {
 public:
-	TimerQueue(EventLoop* loop);
+	explicit TimerQueue(EventLoop* loop);
 	~TimerQueue();
 	
-	TimerId addTimer(const TimerCallback& cb, Timestamp when, double interval);
+	TimerId addTimer(TimerCallback cb, Timestamp when, double interval);
 	void cancel(TimerId timerId);
-
 
 private:
 	typedef std::pair<Timestamp,Timer*> Entry;

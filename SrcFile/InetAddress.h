@@ -2,13 +2,12 @@
 #define MUDUO_NET_INETADDRESS_H
 
 #include "StringPiece.h"
-
+#include <stddef.h>
 #include <netinet/in.h>
-
 
 namespace sockets
 {
-const struct sockaddr* sockaddr_cast(const struct sockaddr_in6* addr);
+	const struct sockaddr* sockaddr_cast(const struct sockaddr_in6* addr);
 }
 
 class InetAddress
