@@ -4,12 +4,11 @@
 #include "Atomic.h"
 #include "Types.h"
 #include "TcpConnection.h"
-
-#include <map>
 #include <boost/noncopyable.hpp>
 #include <boost/scoped_ptr.hpp>
 #include <boost/shared_ptr.hpp>
 
+#include <map>
 
 class Acceptor;
 class EventLoop;

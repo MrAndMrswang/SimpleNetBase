@@ -2,7 +2,9 @@
 #define MUDUO_NET_TIMER_H
 
 #include <boost/noncopyable.hpp>
-
+#include "Atomic.h"
+#include "Timestamp.h"
+#include "Callbacks.h"
 class Timer : boost::noncopyable
 {
 public:
