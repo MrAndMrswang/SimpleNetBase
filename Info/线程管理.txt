@@ -1,0 +1,141 @@
+EventLoopThread:
+成员变量：
+EventLoop* loop_; 
+	用于指向相应的EventLoop，主要在threadfunc函数中进行创建并且执行完loop()函数后，置为null。
+	在析构函数中执行quit()。
+bool exiting_; 
+	标志是否已经退出，构造函数中置为false，析构函数中置为true。
+Thread thread_;	
+	在构造函数中利用成员函数threadfunc()和name进行初始化，表示本线程即IO线程。在析构函数中调用join()。
+	即pthread_join。在startLoop函数中执行start()函数。
+MutexLock mutex_;
+	构造函数中默认初始化，同时用来初始化cond_，在startLoop()和threadFunc()中进行loop_竟态管理。
+Condition cond_;
+	协同mutex进行loop_资源的竟态管理。
+ThreadInitCallback callback_; 
+	构造函数中初始化。回调函数在EventLoop::loop事件循环之前被调用 相当于初始化
+	默认调用ThreadInitCallback()。
+成员函数：
+EventLoopThread(const ThreadInitCallback& cb,const string& name);
+	构造函数主要输入构造Thread类需要的参数，即回调函数和线程名字。
+~EventLoopThread() 
+	将exiting标志置为true。如果loop_还没有结束loop()，执行loop_.quit()调用Thread::join()即pthread_join()
+void threadFunc()
+	该函数和EventLoopThread进行bind，然后初始化了一个class Thread，即新建线程执行的是该函数，该函数
+	创建一个EventLoop，然后调用Callback（loop），然后将该loop赋值给loop_,然后唤醒startLoop()函数。返回
+	创建的loop_对象。
+	我们知道loop函数是一个while循环，因此线程将会一直执行loop函数，并在里面处理事情。这个loop函数显然
+	可以访问eventloop结构中的数据成员和函数成员，因此我们通过改变这个eventloop结构中的具体数据成员和
+	函数成员，就可以达到让线程在loop函数中为我们做定制的事情。所以我们通过eventloop结构接管了对这个线
+	程的控制。 
+EventLoop* startLoop();
+	启动线程使该线程成为IO线程，同时创建并且返回一个loop对象。
+	另外我们可以看到函数中有条件变量的使用，这里的条件变量主要是作用于最开始时，Eventloopthread中
+	的startloop的调用。在startloop中需要返回loop_指针，但是这个指针开始时是空的，到新线程中才创建
+	具体的eventloop，而此时loop_才指向它。因此需要用条件变量，以等待新线程中创建好eventloop，否则
+	返回的loop_将为空。这里的notify主要是通知调用startloop的线程，指向新线程的eventloop已经创建完
+	毕了，并已经用loop_指向了它，可以将loop_从startloop函数返回了。主要调用thread_.start();
+	
+	
+CurrentThread空间
+变量：
+extern __thread int t_cachedTid;	
+	缓存当前线程的ID。
+extern __thread char t_tidString[32];
+extern __thread int t_tidStringLength;
+	以上两个函数用于缓存当前线程的ID转换为string。
+extern __thread const char* t_threadName;
+	存储当前thread的name。
+函数：
+void cacheTid()
+	存储现阶段线程的ID。主要调用Thread.c中的gettid函数，即syscall(SYS_gettid)，这个线程pid是系统
+	内唯一的。pthread_self函数获取的是线程ID，线程ID在某进程中是唯一的，在不同的进程中创建的线程
+	可能出现ID值相同的情况。
+inline int tid()
+	读取现在线程ID，利用__builtin_expect()进行性能优化。
+inline const char* tidString() 
+inline int tidStringLength()
+inline const char* name()
+	以上函数返回Thread缓存。
+bool isMainThread();
+	判断当前所处线程是否是缓存的线程id。
+void sleepUsec(int64_t usec);
+	调用::nanosleep()函数。
+
+Current空间主要在Thread函数中调用。
+	
+Thread类
+成员变量：
+bool started_;
+	表示是否开始。在start()函数中设置为true，在pthread_create错误之后设置为false。
+bool joined_;
+	表示是否已经joined，调用join()函数之后设置为true。
+pthread_t pthreadId_;
+	主要保存pthreadId_,即pthread_create第一个参数。
+pid_t tid_;	
+	需要存储的tid，唯一。
+ThreadFunc func_; 
+	在构造函数中初始化，利用该func_初始化ThreadData中的成员。最终需要执行的回调
+string name_;	
+	构造函数中初始化，在setdefaultName中初始化。利用prctl设置的线程名字。
+CountDownLatch latch_; 
+	在start()函数中，成功pthread_create之后，利用latch_.wait()，等待runInLoop()函数的执行。
+static AtomicInt32 numCreated;	
+	setDefaultName用到，来设置name_。
+成员函数：
+explicit Thread(const ThreadFunc&, const string& name);
+	显示定义，只能如此构造，利用func_传入的函数作为回调。将started_设置为false，joined设置为false。
+	赋值成员变量func_,name，将latch值count_设置为1。
+~Thread（）
+	如果开始执行pthread_create则调用pthread_detch()，如果没有调用join()函数，则调用pthread_detach。
+	函数pthread_detach(thread_id)（非阻塞，可立即返回）这将该子线程的状态设置为分离的（detached），
+	如此一来，该线程运行结束后会自动释放所有资源。
+void start(); 
+	该类的核心函数，即启动一个线程，主要调用pthread_create，同时创建一个ThreadData传入线程中，主要调用
+	该类中的runInThread。
+int join()
+	在该类中使用pthread_join()函数。
+	
+在Thread.c文件中还有如下非成员量：
+void afterFork()        
+	fork之后打扫战场，子进程中执行一般不用
+class ThreadNameInitializer   
+	线程名初始化。  
+struct ThreadData 
+	在其内部保存线程运行的回调，线程的名字，以及runInThread。
+void ThreadData::runInThread()
+	是线程真正执行的函数，其中会线程id赋值，同时执行回调，线程改名称。唤醒start中的wait。
+	EventLoop中loop()最终会在这里执行。EventLoopThread中threadfunc_绑定在这里。
+
+EventLoopThreadPool
+	其思想是EventLoop+threadpool，为了更方便的使用，所以EventLoopThreadPool用一个mainreactor来创建
+	EventLoopThreadPool，同时在EventLoopThreadPool中将EventLoop和Thread绑定，可以返回EventLoop对象来
+	使用EventLoopThreadPool中的Thread。
+成员变量：
+EventLoop* baseLoop_;  
+	在TcpServer中构造，与Acceptor所指的EventLoop相同 。在baseLoop中创建线程池。
+string name_;
+	在构造函数中赋值，主要用来给EventLoopThread类中的name_赋值。
+bool started_;
+	构造函数中设置为false，调用start函数设置为true。
+int numThreads_;	
+	设置的线程数，初始化为0；
+int next_;	
+	保存loops_中下一个loop的坐标。主要在getnextloop()函数中调用。
+boost::ptr_vector<EventLoopThread> threads_; 
+	在start中，将对应numThreads数量的thread压入该vector中，IO线程列表。
+std::vector<EventLoop*> loops_;		
+	start()中压入对应数量的EventLoop。
+成员函数：
+EventLoopThreadPool(EventLoop* baseLoop, const string& nameArg);
+	传入参数baseLoop,nameArg用来赋值。
+void EventLoopThreadPool::start(const ThreadInitCallback& cb)
+	该start()主要在TcpServer中调用。传入cb用来初始化每一个loopthread中的loop包括baseloop。
+	肯定首先还是要判断当前thread和IO线程是否是一个线程，同时根据numThreads_来开启线程。
+EventLoop* getNextLoop() 获取下一个loop的指针。
+	在TcpServer::newConnection()中调用。如果loops_为空，则loop指向baseLoop_  ，如果不为空，
+	按照round-robin（RR，轮询调度）的调度方式选择一个EventLoop。
+EventLoop* getLoopForHash(size_t hashCode)
+	根据hashCode来获得EventLoop。
+vector<EventLoop*> EventLoopThreadPool::getAllLoops()
+	获得所有EventLoop。

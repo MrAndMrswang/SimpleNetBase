@@ -1,0 +1,209 @@
+Acceptor类
+	该类主要在TcpServer类中调用，即用来接受一个TcpConnection，是用来listen，accept，并调用回调函数来处
+	理新到的连接，Acceptor中封装了socket fd，利用RAII手法初始化并进行管理。
+成员变量：
+EventLoop* loop_; 
+	该变量在构造函数中初始化，指向参数loop。主要用来判断listen()函数和handleRead()函数在IO线程中执行。
+Socket acceptSocket_;
+	在构造函数中，根据listenAddr初始化为对应sa_family_t的socket。 并且关联相应的channel。在构造函数中
+	初始化对应的socket成员变量。负责进行listen和accept函数的实现。
+Channel acceptChannel_;		
+	在构造函数中利用loop_和acceptSocket进行初始化，同时设置该channel的readcallback函数。对应于Epoller
+	也就是handlevent即在loop()函数中运行。且该channel在析构函数中进行remove()。
+NewConnectionCallback newConnectionCallback_; 
+	在handleRead()函数中，执行回调函数。相当于在channel的readcallback中运行。如果没有直接关闭accept
+	的fd。
+bool listenning_;	
+	构造函数中初始化为false。在listen()函数中设置为true，表示正在listen。
+	表示是否在listening
+int idleFd_; 
+	记录errno的文件
+成员函数：
+Acceptor(EventLoop* loop,const InetAddress& listenAddr,bool reuseport)
+	该构造函数中有几个重点，即在构造函数中创建了acceptSocket_，创建了acceptChannel。所以这两个对象的
+	管理均由RAII机制控制。初始化loop指针，以及根据listenAddr需要进行accept的socketfd，同时默认
+	reuseAddr，设置reuseport，将acceptSocket的地址与listenAddr绑定。
+~Acceptor()
+	该类的析构函数非常重要。析构掉对应的acceptSocket，acceptChannel。同时将Channel在poller中设置为
+	kDeleted，接着从epoll_fd中移除对应的fd，从对应的channels_中移除对应的channel。
+void listen()
+	首先将listenning设置为true。该函数主要作用就是调用acceptSocket的listen()。
+	该函数主要在TcpServer中被bind，然后用在loop_->runInLoop()函数中。
+void handleRead() 
+	该函数主要被绑定在channel中的readcallback函数。其主要功能是调用acceptSocket_.accept()函数，同时
+	对accept到的socket进行初始化。这里调用acceptSocket的accept()，同时判断是否需要进行初始化，否则直接关闭fd
+	以上两个函数都需要在IO线程中进行调用。
+
+	
+TcpServer
+成员变量：
+enum Option
+	表示Tcp属性中NoReusePort。主要是用来在构造函数中对acceptor_进行初始化。
+EventLoop* loop_
+	在构造函数中利用loop进行初始化。主要用来判断TcpServer中的每一个函数都需要在IO线程中执行。
+const string ipPort_  
+	在构造函数中利用listenAddr进行初始化。ipport同时用来初始化TcpConnection的name，作为后半部分。
+const string name_ 
+	构造函数中初始化EventLoopThreadPool的名字，也用来初始化TcpConnection的name，作为前半部分。
+boost::scoped_ptr<Acceptor> acceptor_ 对应unique_ptr以解决重复释放和内存泄漏问题。
+	构造函数中默认初始化new Acceptor(loop,listenAddr,option == kReusePort)。且将TcpServer中的newConnection
+	bind到Acceptor中的newConnectioncallback。同时在IO线程中执行该函数的listen。
+boost::shared_ptr<EventLoopThreadPool> threadPool_
+	构造函数中利用loop和name_来初始化。同时在setThreadNum函数中设置线程的数量。同时这里传入初始化loop
+	函数可以对EventLoop进行初始化。
+AtomicInt32 started_;
+	该变量是一个Atomic类，保证TcpServer中start()函数运行一次。
+int nextConnId_;
+	构造函数中初始化为0，每次新建一个connection，便将对应的序号加一。
+std::map<string, TcpConnectionPtr> connections_
+	保存一个connnection的name和指针对应的map。在析构函数中，遍历析构connection用。
+成员函数：
+TcpServer(EventLoop* loop,const InetAddress& listenAddr,const string& nameArg,Option option)
+	该构造函数完成对loop_，ipPort_，name_赋值，同时初始化了一个Acceptor，ThreadPool。这里的
+	callback都用来初始化TcpConnection中的Callback。这两个默认Callback均在TcpConnection.c文件中。
+~TcpServer() 
+	该析构函数非常重要，首先保证对每一个connection在IO线程中进行Destroy。同时析构每一个TcpConnection。
+void setThreadNum(int numThreads)
+	该函数主要设置线程池中线程数目。
+void start()
+	主要调用threadPool中的start函数。即start对应numThreads个线程。同时利用threadInitCallback_进行
+	初始化。
+void newConnection(int sockfd, const InetAddress& peerAddr)
+	该函数被绑定在acceptor中的NewConnection()。且利用轮询法寻找下一个EventLoop，同时初始化一个
+	TcpConenctionPtr，设置对应的name，设置该connection中对应的各种回调函数。
+	其中主要涉及一下四个回调：
+	setConnectionCallback，为默认的callback，在TcpConnection.c文件中，主要打印建立，关闭，销毁日志。
+	messagecallback主要是处理对应的buffer，即重置buffer中的readerIndex和writeIndex。在connection的
+	handleRead中调用。
+	writeCompleteCallback主要在IO函数中调用。在Connection中handleWrite()中调用。
+	CloseCallback将server中的removeConnection绑定在之上。在Connection中的handleClose调用。
+	最终在IO线程中调用connectEstablished()，即将connection和channel绑定。保证channel中handleEvent在
+	经过tie的情况下，有对象才进行操作。其中tie是引用，保证不会重复shared_ptr计数。
+void removeConnection(const TcpConnectionPtr& conn)
+	该函数被绑定在Connection上，并且负责调用在IO线程中执行，即runInLoop(removeConnectionInLoop)。
+void removeConnectionInLoop(const TcpConnectionPtr& conn)
+	该函数获得每一个connection对应的ioLoop，然后将TcpConnection中的connectDestroy函数排到IO线程中。
+	
+TcpConnection
+	当建立连接后，TcpServer中的map持有TcpConnection的shared_ptr指针，因此TcpConnection在被移除map前不
+	会析构，其shared_ptr计数器不小于1。在TcpConnection内部使用其shared_ptr时会调用shared_from_this()
+	来获取。当map移除shared_ptr指针后，如果用户不持有TcpConnection的shared_ptr指针，那么在调用
+	connectDestroyed()后，TcpConnection会自动销毁。
+成员变量：
+enum StateE
+	表示当前Connection的工作状态，即正在连接或者断开连接，还是已经连接或者断开。
+EventLoop* loop_;
+	该Loop即是TcpServer中分配的threadpool中对应的ioLoop。
+const string name_;
+	在构造函数中赋值为nameArg，即是TcpServer中的connname。
+boost::scoped_ptr<Socket> socket_
+	在构造函数中，利用传进来的sockfd，初始化一个Socket Class。其中sockfd即为Acceptor中accept到的connfd。
+boost::scoped_ptr<Channel> channel_;
+	该类中非常重要的成员。利用传进来的ioLoop和sockfd进行初始化。并且在构造函数中设置对应的Callback。
+const InetAddress localAddr_;    
+	构造函数中利用localAddr进行初始化，其中传入参数localAddr，为connfd的本地sockaddr_in6。该地址需要
+	通过getsockname()函数来获取。
+const InetAddress peerAddr_;	
+	peeraddr在构造函数中用peerAddr初始化。即TcpServer中newConnection中，在acceptor调用来设置对端的addr。
+	accept到的是peerAddr，即connfd的对端地址。
+ConnectionCallback connectionCallback_;
+MessageCallback messageCallback_;
+WriteCompleteCallback writeCompleteCallback_;
+CloseCallback closeCallback_;
+	以上四个函数在TcpServer类中newConnectioncallback函数中进行初始化。在这里该四个函数直接在构造函数中
+	直接用就行。
+HighWaterMarkCallback highWaterMarkCallback_;
+	该函数主要在sendInLoop()函数中调用。
+size_t highWaterMark_;	
+	发送缓冲区数据“上限阀值”，超过这个值，执行highWaterMarkCallback_
+Buffer inputBuffer_;
+	输入Buffer，这个buffer仅在handleRead()函数中调用。即channel中的readcallback()回调中调用。
+Buffer outputBuffer_; 
+	这是writeBuffer，主要在sendInLoop中调用，在这里缓存没有写完的字节。然后调用handleWrite来处理
+	该outputbuffer。
+boost::any context_;
+
+成员函数：
+	在.c文件中包含了默认的连接和消息回调函数。在TcpServer中来设计对应的newConnection。如有不同的需要
+	可以通过TcpServer重新进行设计。TcpConnection可以说是整个Tcp层的核心内容。代码量也较大需要好好学习。
+其构造函数
+TcpConnection(EventLoop* loop,const string& nameArg,int sockfd,const InetAddress& localAddr,
+               const InetAddress& peerAddr)；
+	该类在TcpServer的newConnection()中进行初始化。其中loop即为ThreadPool中的ioloop。
+	该name首部和TcpServer的name_，threadPool中的name_相同，可以理解为一族。每个EventLoopThread的name
+	首部均一样。其中sockfd即为进行connect的sockfd或者accept到的sockfd。接着利用loop和sockfd初始化一
+	个channel，将localAddr和peerAddr初始化。接着设置channel中的Readcallback，writecallback，closecallback
+	以及errorcallback。state_设置为kconnecting。reading_设置为true。将socket设置为keepalive。
+~TcpConnection()
+	确保connection析构时，state_为disconnected。
+bool getTcpInfo(struct tcp_info* tcpi) const
+	获取当前连接状态。主要调用::getsockopt(sockfd_, SOL_TCP, TCP_INFO, tcpi, &len)
+string getTcpInfoString() const            
+	获取当前socket_中的信息并转换为string。主要调用Socket::getTcpInfoString(char* buf, int len) const
+void send(const void* data, int len）
+	该函数调用send(StringPiece&);
+void send(const StringPiece& message)
+	调用sendInLoop()函数。保证在IOloop中运行。
+void send(Buffer* buf)
+	调用sendInloop()，保证在IOLoop中运行。以上三个函数都是通过调用sendInLoop来进行
+void sendInLoop(const StringPiece& message)
+	主要调用sendInLoop(const void* data, size_t len)。
+void sendInLoop(const void* data, size_t len) 
+	该函数是非常重要的send函数。整个TcpConnection的send都需要用到这个函数。
+	里面的逻辑关系较为复杂，但是可以保证使用者不用管理linux的send()，因为这个函数牵扯到是否一次写完，指
+	针的移动，很麻烦的操作。所以全部封装在这里。
+	如果channel没有正在写，同时buffer中没有等待write的数据，可以直接利用::write()函数操作。如果一次性
+	写完还需要调用writeCallback函数。该函数由使用者直接通过TcpServer传入。如果write没有将数据全部写完，
+	则需要将剩余数据和buffer中剩余数据进行append。如果数据太多，需要在ioLoop中执行highwatermarkcallback()
+	同时保证channel为写状态，在IOloop中将数据写完。
+void shutdown()		
+	在保证connection是连接状态下，调用shutdownInLoop。
+void shutdownInLoop() 
+	主要进行半关闭，即调用socket class中的shutdownWrite()函数。
+void forceClose()
+	主要调用函数void TcpConnection::forceCloseInLoop()
+void forceCloseWithDelay(double seconds)
+	调用loop的runafter函数，表示在一段时间过后再调用forececlose。
+void forceCloseInLoop()
+	保证在IO线程中调用handleClose();
+const char* stateToString() const 
+	返回connection当前状态，即kDisconnected、kConnceting、kConnected、kDisconnecting。
+void setTcpNoDelay(bool on)
+	主要调用socket class 的setTcpNoDelay函数。将当前socket_设置为无延迟。
+void connectEstablished()
+	连接建立。在TcpServer中建立连接后会调用connectionCallback_
+void startRead()
+	在IO线程中调用startReadInLoop()。
+void startReadInLoop()
+	主要调用channel的enablereading()函数。
+void stopRead()
+	主要调用stopReadInLoop()。
+void stopReadInLoop()
+	首先确保该函数在IOThread中运行，同时调用channel的disablereading()函数。
+void connectEstablished()
+	该函数在TcpServer类的newconnection()中，初始化完毕一个connection之后，在IOLoop中调用该函数。
+	主要调用channel的tie函数，即将本connection和channel维系起来。同时确保channel可读。
+	同时执行connectioncallback。
+void connectDestroyed()
+	该函数保证在IOLoop中运行。同时将channel所有关注的时间全部disable。之后将channel从epoll移除。
+void handleRead(Timestamp receiveTime)
+	该函数作为channel的readcallback函数。确保该函数是在IOLoop中运行。可以看出来IO线程名副其实，所
+	有的IO操作都在IO线程上执行。主要调用了buffer的readFd函数。如果有信息则调用messagecallback()函数。
+	否则直接关闭。
+void handleWrite()
+	该函数即为channel中的writecallback函数。该函数也确保是在IO线程中执行。该函数配合sendInLoop()函数使用
+	完成SendInLoop函数未完成的工作。如果channel是可写的，便将outBuffer中的数据通过write到对应的channel。
+	并且更新对应的buffer。如果对应的readableByte()为0，则认为数据写完了，便执行writecompletecallback函数。
+	如果状态更新为disconnecting，则进行半断开模式。
+void handleClose()
+	该函数也是在IOthread中执行，同时设置connection的状态为kDisconnected，同时将channel进行disableall()，
+	接着确保connection不析构的情况下，调用defaultconnectioncallback，之后调用closecallback_，即
+	TcpServer的removeConnection()函数。
+void TcpConnection::handleError()
+	该函数主要调用sockets的getSocketError。
+
+
+
+
+
+

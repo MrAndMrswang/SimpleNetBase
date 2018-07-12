@@ -1,0 +1,118 @@
+Time系列
+反应堆不仅使用IO复用处理网络事件驱动，还会实现定时器来处理时间事件的驱动（请求的超时处理或
+者定时任务分配）。所以定时器集合需要有如下几个功能：
+1、最近超时时间
+2、遍历时间事件
+3、添加时间
+4、删除事件
+
+首先介绍Class Timer
+其主要成员为
+TimerCallback即时间事件的回调函数
+Timestamp expiration_超时时间
+interval_时间间隔
+bool repeat_判断该时间是否是重复事件
+int64_t sequence_是该时间事件的统一标识ID
+static AtomicInt64 s_numCreated表示该类统一的计数
+成员函数
+run()表示运行该时间事件的回调
+expiration_等函数用来显示私有成员
+restart函数表示重新计时，主要针对repeat事件，来重启计时。
+
+
+Class TimerId
+就两个成员Timer 和 sequence，主要用来记录Timer的ID
+
+
+Class Timestamp时间戳类
+就一个私有成员
+int64_t microSecondsSinceEpoch_类记录着微秒
+
+成员函数
+swap(Timestamp& that)用于交换两个Timestamp类的私有成员微秒
+toString（）将微秒转换为一个秒和微秒混合表示的string
+toFormattedString()将微秒转换为年月日表示的结构，并且可以选择是否需要显示微秒
+now（）用于返回一个现在时间表示的Timestamp
+ 
+（计时）只使用 gettimeofday 来获取当前时间。
+（定时）只使用 timerfd_* 系列函数来处理定时。
+其中时间函数利用到系统函数gettimeofday的原因如下： 
+clock_gettime 精度最高，但是它系统调用的开销比 gettimeofday 大。
+gettimeofday 不是系统调用，而是在用户态实现的（搜 vsyscall），没有上下文切换和陷入内核的开销。
+gettimeofday 的分辨率 (resolution) 是 1 微秒，足以满足日常计时的需要。muduo::Timestamp 用一个
+int64_t 来表示从 Epoch 到现在的微秒数，其范围可达上下 30 万年。
+ 
+timerfd_* 入选的原因：
+sleep / alarm / usleep 在实现时有可能用了信号 SIGALRM，在多线程程序中处理信号是个相当麻烦的事
+情，应当尽量避免。
+nanosleep 和 clock_nanosleep 是线程安全的，但是在非阻塞网络编程中，绝对不能用让线程挂起的方式
+来等待一段时间，程序会失去响应。正确的做法是注册一个时间回调函数。
+getitimer 和 timer_create 也是用信号来 deliver 超时，在多线程程序中也会有麻烦。timer_create 可以指
+定信号的接收方是进程还是线程，算是一个进步，不过在信号处理函数(signal handler)能做的事情实在很受限。
+timerfd_create 把时间变成了一个文件描述符，该“文件”在定时器超时的那一刻变得可读，这样就能很方便地融
+入到 select/poll 框架中，用统一的方式来处理 IO 事件和超时事件，这也正是 Reactor 模式的长处。我在一
+年前发表的《Linux 新增系统调用的启示》中也谈到这个想法，现在我把这个想法在 muduo 网络库中实现了。
+传统的 Reactor 利用 select/poll/epoll 的 timeout 来实现定时功能，但 poll 和 epoll 的定时精度只有毫
+秒，远低于 timerfd_settime 的定时精度。
+
+
+TimerQueue是定时器的核心部件
+成员变量：
+set<pair<Timer*,int64_t>> activeTimers_ 记录活跃的定时事件
+bool callingExpiredTimers_ 判断是否正在处理超时事件
+set<pair<Timer*,int64_t>> cancelingTimers_ 保存的是取消的定时器
+EventLoop* loop_ 表示一个EventLoop
+const int timerfd_;	代表该timerfd，整个队列只用到一个timerfd
+Channel timerfdChannel_; 表示timerfd用到的Channel
+set<pair<Timestamp,Timer*>> timers_;	
+成员函数：
+TimerQueue（EventLoop* Loop）指定对应的EventLoop，timerfd，channel和timer以及callingExpiredTimers
+同时在构造函数中给timerfd对应的channel设定回调。
+TimerId addTimer(const TimerCallback& cb, Timestamp when, double interval)
+相队列之中添加定时器
+cancel(TimerId timerId);/取消某个定时器
+void cancelInLoop(TimerId timerId);	
+void addTimerInLoop(Timer* timer);增加定时器
+void handleRead();
+bool insert(Timer * timer);
+void reset(const std::vector<Entry>& expired, Timestamp now);
+
+其中.c文件中包含了很多非成员函数
+其中cretaTimerfd创建timerfd  相对定时器，要获取CLOCK_MONOTONIC  到时返回1
+struct timespec howMuchTimerFromNow 返回一个到现在的时间长度
+readTimerfd(int timerfd,Timestamp now)
+读取timerfd信息，超时后，timefd变为可读,howmany表示超时的次数
+void resetTimerfd(int timerfd, Timerstamp expiration) 重新设定timerfd的定时事件
+TimerId addTimer(const TimerCallback& cb,Timestamp when,double interval)//添加新的定时器
+void addTimerInLoop(Timer* timer) //如果插入首部，更新timrfd关注的到期时间
+void cancel(TimerId timerId)//取消定时器
+void cancelInLoop(TimerId timerId) //取消要关注的重复事件 删除Timers_和activeTimers_中的Timer
+//将删除的timer加入到取消的timer队列中 //取消的定时器与重新启动定时器有冲突
+std::vector<TimerQueue::Entry> getExpired(Timestamp now)
+//获得当前已经超时的timer  在timers_和activetimers_中删除刚才被添加的元素
+void handleRead()
+//读timerFd,防止一直出现可读事件，造成loop忙碌 //获得超时的定时器 /将目前的状态调整为处理超时状态
+//将取消的定时器清理掉
+//更新完成马上就是重置，重置时依赖已经取消的定时器的条件，所以要将取消的定时器的队列清空
+//逐个调用超时的定时器的回调 //退出处理超时定时器额状态 //把具有重复属性的定时器重新加入定时器队列中
+bool TimerQueue::insert(Timer* timer)//将Timer插入到两个同步的TimeQueue中，最关键的一个函数
+//判断是否要将这个timer插入队首，如果是，更新timefd关注的到期事件
+或者//将Timer中按顺序插入timer_，set是有序集合，默认关键字<排列 同时随意插入进入activeTimer_
+
+void TimerQueue::reset(const std::vector<Entry>& expired,Timestamp now)
+//将具有重复属性并且不在取消的定时器队列中的，//重新设置定时器的到期时间
+重新加入 timers_和activeTimers_中 ,重新设置timerfd应该关注的时间
+
+
+activeTimerSet和timer_保存的是相同的数据
+timers_是按照到期的时间排序的，activeTimerSet_是按照对象地址排序
+
+TimerQueue是用来进行管理调度的，而Timer是真正的超时事件
+TimerId、Timer、TimerQueue三个class的封装，反映到实际使用，主要是EventLoop中的三个函数：
+runAt()、runAfter()、runEvery()。
+首先，是EventLoop类对象的初始化：
+在EventLoop的构造函数中对Poller和TimerQueue类型的成员进行初始化。
+timefd和Channel关联起来，并绑定TimerQueue::handleRead作为描述符可读时的回调函数，而在
+TimerQueue::handleRead中又会去调用超时的Timer的回调。
+EventLoop中的函数就是runAt、runAfter、runEvery 其实主要是TimeQueue::addTimer函数，因
+为runAfter和runEvery都是通过设置不同的参数去调用TimeQueue::addTimer

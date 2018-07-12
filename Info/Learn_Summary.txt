@@ -1,0 +1,177 @@
+muduo网络库编程遇到坑：
+
+1、解决析构时候的竟态问题解决方法：
+利用shared_ptr。
+
+2、创建对象要点：
+构造函数中需要安全创建对象，不要泄漏this指针。否则会创造半成品。
+析构函数中需要安全析构对象，避免空悬指针和野指针。
+
+3、boost/shared_ptr和C++11中的<memory>头文件中。
+神器shared_ptr/weak_ptr，shared_ptr计数是原子操作，没有用锁，性能不俗。
+使得垃圾回收变得高效，内存中没有垃圾。所以说现代C++编程中，很少会发生内存泄漏的现象。
+
+4、C++内存问题：
+1、缓冲区溢出
+2、空悬指针，野指针
+3、重复释放
+4、内存泄漏
+5、new /delete不配套
+6、内存碎片
+
+5、在使用shared_ptr中遇到的问题。
+为了避免过度拷贝shared_ptr应该采用值传递。
+采用shared_ptr绑定func可以保证回调函数是安全的，Base 在继承enable_shared_from_this<T> 。
+但是继承对象不能对派生对象进行shared_ptr绑定。
+需要利用智能指针类型转化std::dynamic_pointer_cast<Derived>(shared_from_this())将返回的
+指针转换为派生类类型的指针。
+
+6、如何实现弱回调，即达到一种如果有则执行，没有就跳过？
+若要使用弱回调可以使用weak_ptr,需要将shared_ptr转换成weak_ptr。
+可以实现若是没有对象了，则执行析构函数。否则，忽略。
+
+7、线程同步的原则。
+	1、尽量最低限度共享对象。
+	2、使用高级的并发编程组件。
+	3、尽量少使用锁和信号量。
+	4、atomic，C++11中有<atomic>头文件，不要用内核层的同步原语。
+
+
+8、互斥器调用，即pthread_mutex_t。
+1、非递归的调用mutex即，不可重入的mutex
+2、利用锁对象来，使对象生命期等于临界区。
+3、防止因为加锁顺序不同而导致死锁。
+
+9、C++11中有<condition_variable>，这里采用pthread_cond_t 
+利用条件变量，等待一个或者多个线程为真。
+
+10、在muduo中有很多类继承boost::noncopyable的原因。
+但是最关键的是noncopyable把复制构造函数和复制赋值函数做成了private，这就意味着除非
+子类定义自己的copy构造和赋值函数，否则在子类没有定义的情况下，外面的调用者是不能够
+通过赋值和copy构造等手段来产生一个新的子类对象的。
+
+11、muduo里面非常重要的操作就是函数调用线程转移。很多函数需要runInLoop()
+当线程为原生线程，可以被操作系统操控，一般使用非阻塞IO和IO复用技术。
+
+12、多线程模型情形下，调用fork()，即创建子进程。
+fork(2) 在多线程程序中有太多的问题，几乎没有办法去正确地执行它。唯一清晰的方式是在
+调用 fork(2) 之后立即在子进程中调用 execve(2) 。如果你需要做更多的东西，请使用别的
+方式（而不是这种多线程混搭多进程的方式），真的。从我的经验看来，并不值得去尝试使用
+fork(2) ，即使有pthread_atfork() 的情况下。
+
+13、单线程模型的好处。
+单线程好处：
+单线程可以fork(2)。
+单线程可以控制CPU使用资源。
+
+14、线程池大小的阻抗匹配原则。
+利用T = C/P 其中T代表了线程的数量 其中P为密集计算时间占比。
+
+15、muduo模型：
+non-blocking IO + one loop per thread模型。
+这种模型线程数固定，可以在程序启动时设置，不用频繁的调用或者销毁。
+对实时性有要求的connection可以单独用一个线程；
+数据量大，即IO时间较长的占用一个线程。总之可以对线程进行调配。
+
+
+16、一般模型 reactor+thread pool 或者proactor
+C++11 对内存模型进行规定，即内存序和内存能见度。
+cout并不是线程安全的，不能保证其他线程不会在cout之间对stdout进行输出。
+
+17、linux利用gettid(2)来调用返回值作为线程的id：该id同一时刻只有一个。
+
+18、线程创建原则：
+1、不应该自己创建
+2、相同方式
+3、main()之后创建
+4、同时初始化。
+
+18、线程正常退出，即主函数返回。包括生命周期管理和资源释放。
+
+19、标识符__thread
+是GCC内置的线程局部存储设施，存取效率可以和全局变量相比。__thread变量每一个线程有一份
+独立实体，各个线程的值互不干扰。可以用来修饰那些带有全局性且值可能变，但是又不值得用
+全局变量保护的变量。只能修饰POD类型(类似整型指针的标量，不带自定义的构造、拷贝、
+赋值、析构的类型，二进制内容可以任意复制memset,memcpy,且内容可以复原。
+
+20、RAII是C++中非常重要的一个性质，在muduo中可以解决socket串话问题。很多加锁问题都是这样解决的。
+
+日志logging：诊断日志，交易日志。
+
+muduo使用前向声明，大大简化了头文件之间依赖关系。
+
+namespace提供了单独的作用域，它类似于静态全局声明的使用，可以使用未命名的namespace定义来实现：
+namespace { int count = 0;}      //这里的count是唯一的
+
+#ifndef _TEST_H_
+#define _TEST_H_
+#endif
+把上面的代码加在头文件.h的头尾，即可避免重复定义的错误
+
+如果想要每个线程都有一份独立的数据，那么可以使用__thread关键字修饰数据。 __thread只能用于修
+饰POD类型的数据，不能修饰class，因为它无法调用构造函数和析构函数。__thread可以修饰全局变量、
+函数内的静态变量，不能修饰函数内的局部变量或class的普通成员变量。
+
+线程的真实id是一个整数，可以通过系统调用syscall(SYS_gettid)获得，在muduo中封装为gettid()函数。调用系统调用开销比较大，因此可以使用一个变量t_cachedTid来存储，在线程第一次使用tid时通过系统调用获得，存储在t_cacheTid中，以后使用时不再需要系统调用了。
+
+class thread
+t_tidString[32] 用string类型表示tid，便于输出日志。
+t_tidStringLength string类型tid的长度。
+t_threadName 线程的名字。
+
+reinterpret_cast 将一个类型指针转换为另一个类型指针  
+
+linux无锁化编程--__sync_fetch_and_add系列原子操作函数
+
+prctl(PR_SET_NAME, “process_name”)  
+第一个参数是操作类型，指定PR_SET_NAME，即设置进程名
+
+int clock_gettime(clockid_t clk_id, struct timespec *tp);
+clk_id为CLOCK_MONOTONIC，则返回系统启动后秒数和纳秒数。
+clk_id为CLOCK_REALTIME，则返回RTC
+
+//头文件的理解：
+__BEGIN_DECLS和__END_DECLS作用
+#if defined(__cplusplus)
+#define __BEGIN_DECLS   extern "C" {
+#define __END_DECLS     }
+#else
+#define __BEGIN_DECLS
+#define __END_DECLS
+
+在GNU C中，如果你把调用的函数声明得具体一些，编译器就能更好地优化你的函数调用以及更仔细地检查你的代码。 
+关键字__attribute__ 允许你在作声明时指定一些特殊的属性。
+不想让它有返回值，那么可以使用__attribute__ ((noreturn))。
+
+__builtin_expect。这个指令是gcc引入的，作用是"允许程序员将最有可能执行的分支告诉编译器"。
+这个指令的写法为：__builtin_expect(EXP, N)。意思是：EXP==N的概率很大。
+
+__THROW宏定义只在GCC下有效，观察#ifdef __GNUC__部分，可以看出，在一般C环境中此宏是没有意义的；
+在GNUC版本高于3.2时，库用函数属性将C函数标记为__nothrow__；而如果代码定义了__cplusplus则表示
+为C++代码，且GNUC版本为2.8.x，此时才有意思，为C++程序加入throw()。
+与上面一样，但打印错误码ERRNUM的错误消息 
+extern void __assert_perror_fail (int __errnum, __const char *__file,  
+                  unsigned int __line,  
+                  __const char *__function)  
+     __THROW __attribute__ ((__noreturn__));  
+	 
+	 
+信号屏蔽的作用：
+在linux下写socket的程序的时候，如果尝试send到一个disconnected socket上，就会让底层抛出一个SIGPIPE信号。
+这个信号的缺省处理方法是退出进程，大多数时候这都不是我们期望的。因此我们需要重载这个信号的处理方法。调
+用以下代码，即可安全的屏蔽SIGPIPE：signal （SIGPIPE， SIG_IGN）；
+
+scoped_ptr
+scoped_ptr同时把拷贝构造函数和赋值操作都声明为私有的，禁止对智能指针的复制操作，保证了被它管理的指针不
+能被转让所有权。
+
+C++语言理解：
+C++单遍编译，根据目前代码做出决策，非常影响名字查找和重载决议。
+C++编码规范，尽量利用前向声明，减少编译期的依赖。
+C++函数重载，编译器普遍采用名字改编，每个函数有独一无二的名字，返回值类型不参与重载。
+
+
+头文件的使用规则：
+1、将文件间的编译依赖程度降低。
+2、将定义式之间的依赖关系降低。
+3、编写头文件保护符。
