@@ -1,0 +1,149 @@
+Class Connector：
+Connector是muduo库的连接器，负责客户端向服务器发起连接。实际上就是封装了socket的connect函数
+connector和Acceptor类的作用差不多，都不负责创建TcpConnection，只是调用相应的newConnectionCallback_
+band到handleWrite函数中，再绑定到Channel的setWriteCallback中。acceptor对应的readcallback函数。
+成员变量：
+EventLoop* loop_; 
+	指向所属的loop。在TcpClient类中利用TcpClient的Loop初始化。Connector几乎所有函数都需要在IO线程中
+	执行。需要用这个Loop_进行判断，或者排队。
+InetAddress serverAddr_; 
+	和loop一样，在TcpClient中被初始化，指向服务器端地址。同时利用这个地址初始化链接用的socket。
+bool connect_; 
+	在start()中被置为true，stop被置为false。restart也被置为true。
+States state_;  
+	在构造函数中初始化为kDisconnected。记录当前TcpClient的状态。比如start()时，必须为disconnected，
+	stopInLoop必须为kConnecting。
+boost::scoped_ptr<Channel> channel_;	
+	Connector对应的channel_，Connector只有一个链接。在startInLoop()中的connect()如果成功connect，则
+	进行connecting()，之后创建一个新的Channel，将该Channel绑定给scoped_ptr。同时设置该channel的
+	writeCallback为handlewrite，errorcallback为handleError()，接着激活这个channel的write操作。
+	虽然它和acceptor只激活read或者write，但是信息的读取全部交给创建的connection。
+NewConnectionCallback newConnectionCallback_; 
+	链接成功回调函数，该链接函数即是TcpClient::newConnection()，通过接收到的socket，设置一个connection。
+int retryDelayMs_;	
+	在构造函数中被设置为500，主要是在retry()函数中调用。
+static const int kMaxRetryDelayMs = 30*1000; 
+	最大重试时间，控制retry中retryDelayMs_的变化范围。
+static const int kInitRetryDelayMs = 500;	
+	初始化重试时间，使重试时间慢慢变大
+enum States { kDisconnected, kConnecting, kConnected };
+	即为connector的状态记录state_。
+	
+成员函数：
+Connector(EventLoop* loop, const InetAddress& serverAddr);
+	该构造函数在TcpClient的构造函数中调用。一个TcpClient构造一个connector。该构造函数初始化需要连接的
+	地址，以及IOLoop，同时初始化connect_，以及state_。
+~Connector();
+	析构函数调用前，保证channel_已经reset()。不能有未曾使用的channel。handlewrite()会reset对应的channel。
+void start()
+	在TcpClient::connect()中调用，发起链接主要调用StartInLoop()函数，并且是runInLoop()。此时将状态改为
+	connect_ = true。
+void startInLoop()； 
+	在IO线程中发起链接的函数。该函数主要在connect_=true的状态下，调用connect()函数。
+	同时在restart()函数中也是直接调用该函数。
+void connect()；
+	函数负责链接的具体实现，一般在startInLoop()函数中调用。在这里利用serverAddr中协议族信息创建套接字，
+	并且调用::connect函数。接着通过保存errno的值，来判断是否正确链接，以及是否需要重连。若是正确链接则
+	直接调用connecting()函数。
+	EISCONN：Transport endpoint is already connected
+	ENETUNREACH：Network is unreachable
+	ENOTSOCK：Socket operation on non-socket
+void connecting();
+	若Connect中返回的errno值为EISCONN，则认为正确链接，接着调用connecting()；利用loop_和connect创建的
+	socket来初始化一个channel。设置channel的writecallback为Connector::handleWrite()，errorcallback回调
+	为Connector::handleError()。同时将channel设置为可写。这里需要注意的是，这里connect的套接字是非阻塞
+	套接字，会立即返回，需要用epoll关注时候可写，如果可写则表示该socket成功connect，错误会发生可读可写。
+	连接成功： getsockopt中设置参数为0，则表示成功连接。同时这里socket是一次性的，一旦出错直接关闭重来，
+	connector可以反复使用，但是socketfd和channel都需要每次更新。
+void stop()；
+	当TcpClient调用stop()函数时，执行connector_->stop()函数。
+	要保证在IO线程中调用，stop，所以转换为主要调用stopInLoop。利用queueInLoop()函数。
+void stopInLoop();
+	保证在IO线程中，同时state_的状态为kConnecting。主要调用removeAndResetChannel()和retry函数；
+void restart()；
+	TcpClient::removeConnection中，若是需要retry，则执行；同时将状态更改为kDisconnected，connect_改为
+	true，主要调用startInLoop()函数。
+int removeAndResetChannel()；
+	主要调用channel->remove(),resetchannel函数排到loop。获取channel的fd，同时返回该channel的fd。
+	因为connector需要保证socket为一次性的，每次若是需要再用则创建新的fd和channel。所以可以认为一旦需要
+	用到socket，则不必在保存该fd，返回之后，重置与之相关的channel。
+void resetChannel()
+	主要将scope_ptr的channel进行对丢弃。
+void handleWrite()
+	即channel中的writecallback函数。主要是二次判断非阻塞套接字的connect状态，调用::getsockopt()函数，
+	若是返回0，接着判断是否是自连接现象，否则表示正确connect，执行对应的newconnectioncallback函数。
+void handleError()
+	在connecting初始化，channel时，设置为Errorcallback。如果状态是kConnecting，则重置channel，进行
+	retry()。
+void retry(int sockfd)	
+	因为不管是错误还是怎样， 都需要关闭传递进来的fd。根据是否connect_,判断是否需要重连，接着根据
+	retryDelayMs_，然后过一段时间进行startInLoop()，并且加长重试的间隔。
+
+TcpClient类
+成员变量：
+Connector
+	类封装在TcpClient中使用，一个connector对应一个TcpClient，Connector建立成功之后交给
+	TcpConnection来控制。
+EventLoop* loop_;
+	该loop_在构造函数中由参数loop赋值，主要用来保证需要的函数在IO线程中执行。
+boost::shared_ptr<Connector> connector_; 
+	connector为指向一个connector的智能指针。在构造函数中利用loop，serverAddr进行初始化。同时在构造函数
+	中将connector的newConnectioncallback回调绑定为新建一个connection。在connector执行handlewrite函数时，
+	即对应的channel执行write回调时。在析构函数中停止。
+const string name_;
+	name_在构造函数中初始化的参数为nameArg，在初始化TcpConnection会用到，
+ConnectionCallback connectionCallback_;	
+	默认回调函数在TcpConnection中定义，在构造函数中初始化为默认回调，在建立Tcpconnection时候，
+	setConnectionCallback主要用于设置在connection_建立时进行设置。
+MessageCallback messageCallback_;	
+	构造函数中利用默认回调初始化该函数，该默认回调也在TcpConnection定义，其中会重置该buffer。
+	在建立新的TcpConnection中设置。
+WriteCompleteCallback writeCompleteCallback_;
+	该函数通过TcpClient类进行设置，主要是用户自己设计，在创建connection时，将创建对应TcpConnection的
+	writeComplete回调。在Tcpconnection::handlewrite()中调用，当outputBuffer中缓存字符串为0时。
+bool retry_; 	
+	在构造函数中设置为false。在removeConnection之后，判断是否需要retry，是指建立的连接成功后又断开重连。
+bool connect_;
+	构造函数中设置为true，connect设置为true，disconnect()，stop()设置为false。
+int nextConnId_;
+	构造函数中初始化为1，每次新建一个connection，对ID增加一，将该序号放置在connection的名字中，表示
+	当前TcpClient中建立的第几个connection。
+mutable MutexLock mutex_;
+	主要利用RAII手法进行资源锁定，主要在析构函数中，析构connection，在disconnect()，newconnection()
+	removeConnection()中，都需要进行锁定。
+TcpConnectionPtr connection_;
+	在newConnection时才进行赋值，赋值为在Connector中新建的connection。
+
+成员函数：
+其中声明了两个非成员函数：
+void detailremoveConnection(EventLoop* loop, const TcpConnectionPtr& conn)
+	该函数的绑定传递关系比较复杂，首先在析构函数中，将该函数绑定到TcpConnection中的setCloseCallback，
+	意味着在IO线程中执行绑定工作，若是connection只有一个，则执行forceclose()，该该函数将关闭工作排到
+	Loop中，调用handleclose函数，接着再调用closecallback函数，也就是这个被绑定的函数。该函数功能是将
+	TcpConnection中的connectdestroy函数排到Loop中。
+void detailremoveConnector(const ConnectorPtr& connector)
+	该函数表示在connector_->stop()函数之后，进行延迟一秒的工作。
+TcpClient(EventLoop* loop, const InetAddress& serverAddr, const string& nameArg)
+	该构造函数首先利用loop初始化当前的loop_，利用loop和serverAddr初始化一个connector_，nameArg初始化
+	name主要用来给TcpConnection赋值，设置默认的conncetioncallback函数，保证建立connection时，可以有相应
+	的记录。messagecallback时其inputbuffer初始化好。nextConnId初始化为connection的name做准备。
+	其中还有一个重要的功能，就是在设置connector_时，将其Tcpclient::newConnection设置为相应的connector中
+	的handlwrite()中新建立时的回调。
+~TcpClient()
+	该析构函数比较复杂。首先创建一个临时tcpConnection，判断此时connection_是否没有被别的引用，比如在新建
+	时，就会有两个同时存在的现象，connector不拥有connection，不用担心。如果有connection，执行forceClose
+	函数。若没有connection，则直接执行connector_的stop()函数。在等待一秒之后执行detailremoveConnector
+void connect() 
+	将connect_置为true，主要是调用connector中的start()函数。
+void disconnect() 
+	将connect_置为false，在加锁的情况下主要调用connection_中的shutdown函数。
+void stop()  
+	将connect_设置为false，主要调用connector_中的stop()函数 
+void newConnection(int sockfd) 
+	该函数在构造函数中绑定在connector中的newconnectioncallback函数，在其中放入可写的套接字fd，该fd即是
+	成功connect的fd，然后利用本地地址和对方地址，以及IOLoop，name等参数初始化一个TcpConnection类，将
+	connectioncallback，messagecallback函数进行默认初始化，其中writeCompletecallback为用户设置回调函数，
+	将connection的closecallback设置为removeconnection函数。然后再锁定获取connection资源。完成establish
+void removeConnection(const TcpConnectionPtr& conn) 
+	该函数主要绑定在connection的closecallback回调中，然后锁定的状态下，reset connection_，将connecDestroy
+	排到loop中，如果需要重试则执行restart，否则结束。

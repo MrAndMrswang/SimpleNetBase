@@ -1,0 +1,46 @@
+TcpConnection链接为了避免等待所以需要output buffer 和input buffer。
+buffer首先需要表现为一块连续的内存，可以自动增长，所以采用vector容器来实现。
+Buffer的数据结构是（prependable + readable + writeable）
+其中的Index均为int型，防止利用的迭代器因为扩容而失效。prepend空间是典型的用空间换时间思维。
+//应用层缓冲成员
+在非阻塞网络编程中，一方面我们希望减少系统调用，一次读的数据越多越好，但是需要减少内存空间的占用，
+所以需要结合栈上空间来完成该项功能。
+这里采用条件触发方式(水平触发)，不用每次调用两个read，对于低延迟程序来说是很高效的。一般数据最多即KB，
+这里64KB的栈上缓存足以应对高速数据。
+
+首先，我非常肯定以及确定的告诉你ssize_t是有符号整型，在32位机器上等同与int，在64位机器上等同与long int，
+有没有注意到，它和long数据类型有啥区别？其实就是一样的。size_t 就是无符号型的ssize_t，也就是
+unsigned long/ unsigned int (在32位下），不同的编译器或系统可能会有区别，主要是因为在32位机器上int和
+long是一样的。
+
+Buffer成员：
+static const size_t kCheapPrepend = 8;	设计vector首部prependable长度
+static const size_t kInitialSize = 1024;	设计vector默认长度
+vector<char> buffer_; 核心结构，即vector
+size_t readerIndex_;	利用size_t来表示位置，即写文件头位置
+size_t writerIndex_;	读文件头位置
+
+成员函数：
+explicit Buffer(size_t initialSize = kInitialSize)
+首先初始化vector<int> buffer，以及readerIndex_和writerIndex_。
+void swap(Buffer& rhs)  交换两个Buffer中的成员变量
+size_t readableBytes() const返回待读的空间大小
+size_t writeableBytes() 返回可以写的空间
+size_t prependableBytes() 返回prependableBytes的大小
+const char* peek() const 返回可读位置的迭代器
+const char* findCRLF() const找到回车换行符
+const char* findEOL() const 找到'\n'；
+void retrieve(size_t len)  主要给readerIndex加len长度 或者调用retrieveAll()
+void retrieveAll() 重置readerIndex_和writerIndex_
+string retrieveAllAsString() 
+string retrieveAsString(size_t len) 都是调用retrieve(len) 但是返回可读位置起到len长。
+void append(const StringPiece& str) 
+void append(const char* /*restrict*/ data, size_t len) 复制data到writerIndex_之后。
+void ensureWritableBytes(size_t len) 确认是否有len空间可写
+char* beginWrite() 确定writerIndex_迭代器的位置
+void hasWritten(size_t len) 重新确定writerIndex_位置。
+void unwrite(size_t len)	减小writerIndex位置。
+void prepend(const void* data, size_t len) 减小readerIndex_位置。
+size_t internalCapacity() const 返回vector的容量。
+ssize_t readFd(int fd, int* savedErrno); 主要利用readv函数，将数据全部读到iovec中，
+void makeSpace(size_t len)	确保vector有len的可写空间

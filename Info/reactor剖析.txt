@@ -1,0 +1,260 @@
+EventLoop类
+EventLoop.c中有
+__thread EventLoop* t_loopinthisThread = 0；
+	这是一个线程共享变量，线程中该值都一样。在创建之前EventLoop是已经拥有该变量。
+const int kPollTimeMs = 10000;	
+	对于Epoll来说就是epoll_wait的限制时间。
+其中还有class IgnoreSigPipe
+主要执行任务::signal(SIGPIPE, SIG_IGN);
+
+	
+成员变量
+std::vector<Channel*> activeChannels_; 
+	存储待处理的activeChannel。主要在poller中更新，并且返回活动发生事件的channel，
+bool callingPendingFunctors_： 
+	是否调用doPendingFunctors()。
+Channel* currentActiveChannel_;
+	构造函数初始化为null，主要在loop()时表示当前要处理的channel，在结束loop()时，将currentChannel
+	置为null。
+bool eventHandling_； 	
+	是否在处理activaChannel中事件的标志。
+int64_t iteration_		
+	在loop()中调用，表示 loop循环次数
+bool looping_;	 
+	在loop()中调用，开始时置true，结束置false，表示是否正在looping
+mutable MutexLock mutex_;	
+	可以修改状态的锁，主要在queueInLoop中调用，为了线程安全。向pengdingFunctors中压任务。
+Timestamp pollReturnTime_; 	
+	时间戳，在epoll中，即epoll_wait()结束时返回now()。  
+scoped_ptr<Poller> poller_; 
+	构造函数中默认初始化为，epoll，并指向该poller对象  
+std::vector<Functor> pendingFunctors_; 
+	本线程或其它线程使用queueInLoop压入函数任务，可能是I/O计算任务。
+bool quit_; 
+	主要在eventLoop::quit()中，将quit_置为true，导致loop()函数退出。
+boost::scoped_ptr<TimerQueue> timerQueue_;   
+	在构造函数中初始化，主要管理timer。
+const pid_t threadId_;		 
+	构造函数中初始化为CurrentThread::tid()，即表示当前所属对象线程id，利用缓存等技巧提高效率。
+int wakeupFd_;		
+	用于eventfd，线程间通信。在构造函数中利用非成员函数createEventfd，返回fd。
+	针对该fd的资源管理，在EventLoop()析构之中，调用close()函数。
+	利用wakeup()中write函数，唤醒loop()。
+boost::scoped_ptr<Channel> wakeupChannel_;	
+	在构造函数中进行初始化，channel的fd即为wakeupfd，同时在构造函数中将通道纳入到poller来管理。
+	在析构函数中，将wakeupChannel移除，同时移除监听。
+
+成员函数：
+EventLoop::EventLoop()
+	初始化：loop_,quit_,eventHandling_,callingPendingFunctors_,iteration,threadId_提供默认值。
+	构造一个实际的poller_,构造一个新的timerQueue，同时使用scope_ptr管理。
+	创建eventfd作为线程间等待通知，创建wakeupchannel通道同时在构造函数中表示，
+	函数体中：如果该线程已经存在一个EventLoop，则终止。否则赋值this给t_loopinthisthread。
+	同时设定wakechannel的ReadCallback函数，即EventLoop自己的handleRead函数。
+
+核心函数loop()函数：
+	该函数只能在IO线程中调用，即创建该EventLoop的线程中。
+	其中调用poller_->poll来调用poll返回活动的通道，对于默认epoll即epoll_wait()函数，
+	遍历activechannels_，执行每一个channel的handleEvent()。执行完channel中的任务之后，
+	通过doPendingFunctor处理需要runInLoop的回调任务。
+	
+	进一步说明：
+	这个函数是用来干什么的呢？其实他是用来让I/O线程执行额外的计算任务的，因为如果没有事件发生，
+	I/O线程会一直处于I/O空闲状态，这个时候我们可以利用I/O线程来执行一些额外的任务。先说一下大概流程:
+	假设我们有这样的调用：loop->runInLoop(run)，说明想让IO线程执行一定的计算任务，此时若是在当前的IO线程，
+	就马上执行run()；如果是其他线程调用的，那么就执行queueInLoop(run),将run异步添加到队列，当loop内处理
+	完事件后，就执行doPendingFunctors()，也就执行到了run()；最后想要结束线程的话，执行quit。
+
+void doPendingFunctors() 
+	执行pendingFunctors_中的任务，该函数必须保证线程安全。同时通过swap让临界区变得尽量小。
+	通过callingPendingFunctors_变量表示当前EventLoop的运行状态。
+void runInLoop(const Functor& cb)
+	夸线程调用的核心函数。如果是在当前I/O线程中调用，就同步调用cb回调函数，否则在其他线程中调用，
+	就异步将cb添加到任务队列当中，即通过queueInloop()函数，将任务排在当前线程中。
+void queueInLoop(const Functor& cb) 
+	将任务添加到队列当中，队列就是成员变量pendingFunctors_数组容器，如果当前调用queueInLoop调用不是I/O
+	线程，那么wakeup()该I/O线程，以便I/O线程及时处理。或者调用的线程是当前I/O线程，并且此时调用
+	pendingfunctor，需要唤醒。只有在当前I/O线程的事件回调中调用queueInLoop才不需要唤醒。
+void wakeup()
+	加入要执行的事件到队列中后，我们当然希望I/O线程立刻执行该任务，所以立刻调用wakeup函数，唤醒I/O
+	线程，其中在创建eventloop时，我们设定了回调函数，相当于合成了一个eventfd的通道Channel。所以会把
+	它注册如Poller关注的事件里面。
+	通过socket::write函数向wakeFd写入数据会使EventLoop返回然后开始处理事件，实际上就是进行handleRead，
+	我们并未处理接受信息只是作为响应通知而已，然后doPendingFunctors()。 
+void updateChannel(Channel * channel)
+	主要调用poller_->updateChannel(channel);根据channel->index()判断应该在poller中updateChannel执行
+	Epoller中events_的更新。
+TimerId runEvery(double interval, const TimerCallback& cb)
+	表示以周期为interval来运行cb()。即主要调用TimerQueue_->addTimer();
+TimerId runAfter(double delay, const TimerCallback& cb)
+TimerId runAt(const Timestamp& time, const TimerCallback& cb)
+	这两个函数都主要调用timerQueue_->addTimer(cb, time, 0.0);
+	表示具体何时执行cb。
+void removeChannel(Channel* channel)
+	在channel所属的EventLoop中删除对应的channel。
+void cancel(TimerId timerId)
+	主要利用TimerQueue_->cancel，需要对应TimerId的定时事件。
+size_t queueSize()const
+	必须是线程安全函数，返回pendingFunctor() vector的大小。
+void quit()
+	退出当前loop()函数。如果不是在当前EventLoop()函数，则尽快将EventLoop唤醒。
+bool hasChannel(Channel* channel)
+	主要调用poller->hasChannel，这是一个基类函数。判断Poller的ChannelMap中是否包含指定的Channel。
+EventLoop* getEventLoopOfCurrentThread()
+	返回当前EventLoop。即线程中共享的变量t_loopInThisThread。
+
+其中执行pendingFunctors需要注意的技巧。
+1. 不是简单的在临界区内依次调用functor，而是把回调列表swap到functors中，这一方面减小了临界区的长度，
+意味着不会阻塞其他线程的queueInLoop()，另一方面也避免了死锁(因为Functor可能再次调用queueInLoop)。 
+2. 由于doPendingFunctors()调用的Functor可能再次调用queueInLoop(cb)，这是queueInLoop()就必须wakeup(),
+否则新增的cb可能就不能及时调用了  
+3. muduo没有反复执行doPendingFunctors()直到pendingFunctors为空，这是有意的，否则I/O线程可能陷入死循环，
+无法处理I/O事件。
+
+
+
+
+Poller是一个抽象类，可以派生为poll类和epoll类，封装两个IO复用类别。
+成员变量：
+map<int, Channel*> channels_;
+	Poller使用一个map来存放描述符fd和对应的Channel类型指针，这样就可以很方便的通过fd得到对应的Channel。
+EventLoop* ownerLoop_ 
+	用来指向EventLoop，防止Poller被跨线程调用
+
+成员函数：
+bool hasChannel(Channel* channel) const
+	该函数在channels_中寻找对应fd的channel。必须保证在IO线程使用。
+	
+Poller的派生类：
+PollPoller
+成员变量：
+vector<struct pollfd> PollFdList 这是一个存放pollfd的数组，用来传入std::poll中的第一个事件集合参数
+
+成员函数有：
+PollPoller(EventLoop* loop)
+	利用loop初始化基类。
+virtual Timestamp poll(int timeoutMs, ChannelList* activeChannels);
+	该函数是核心，也是EventLoop中调用loop()中运行的主要函数。主要调用::poll函数。
+	传入参数timeouMs作为poll的timeout参数，activeChannel表示发生事件的Channel，利用
+	fillActiveChannel()函数填充。返回Timestamp表示poll返回时间点。
+	其中利用errno，EINTR表示该操作是被信号中断，需要重新等待。
+void PollPoller::fillActiveChannels(int numEvents,ChannelList* activeChannels) const
+	该函数在poll函数中调用，numEvents即为::poll函数返回值，activeChannels即为发生事件的Channel。
+	向活跃事件通道数组放入活跃事件。首先选择pollfds_中的fd，在map<int,channel*>中找到对应的channel，
+	然后设置对应channel的事件，最后将channel放入activeChannels。
+void updateChannel(Channel* channel)
+	用于注册和更新Channel。该函数必须在IO线程中调用。
+	利用channel的编号来判断该Channel是新创建的还是已经存在的。
+	如果是新的则将该channel信息压入pollfds_中，同时在channel_中添加该channel。
+	如果已经存在该channel，则更改pollfds_中的pollfd状态。
+void removeChannel(Channel* channel)
+	输入需要移除的channel。该函数也必须在IO线程调用。在ChannelMap中移除该channel，同时在pollfds_中
+	移除该fd。如果在pollfds_中是最后一个则可以直接进行pop_back();如果不是最后一个，则将其与最后一个
+	进行交换，重新设定对应Channel的index。
+	这里在判断Channels_中的channel是否关注时利用了相反数的小技巧，可以很方便的在关注和不被关注之间进行转换
+
+EPollPoller类     EPollPoller也是IO复用机制的封装epoll
+成员变量：
+const int kNew = -1;
+const int kAdded = 1;
+const int kDeleted = 2; 
+	均是标志位，设置channel的index
+static const int kInitEventListSize = 16;
+	默认事件数组大小，是用来装epoll_wait()返回的可读或可写事件的  
+vector<struct epoll_event> events_  
+	用来保存发生事件虽然预先定义events_大小，但是一旦相等，就会将容量扩大二倍。
+int epollfd_; 
+	保存epoll对应的fd
+
+成员函数：
+EPollPoller(EventLoop* loop)
+	在初始化中：利用epollfd_（epollcreate1（EPOLL_CLOEXEC））来产生一个epollfd。
+	关于epoll_create这个函数的size参数已经弃用。更推荐使用的是epoll_create1(0)来代替普通的用法。
+	另外epoll_create1(EPOLLCLOEXEC)表示生成的epoll fd具有“执行exec()后关闭”特性。
+	所以默认初始化选择这个函数。同时初始化基类，即利用当期的EventLoop。初始化epoll_event vector。
+~EPollPoller()
+	析构函数中，主要用来关闭创建的epoll_create的fd。
+Timestamp poll(int timeoutMs, ChannelList* activeChannels)
+	这个函数主要是epollwait的封装。传入参数timeoutMs作为epoll_wait第三个参数。
+	如果等待到活动的事件，则将对应数量的channel送入fillActiveChannels()函数。
+	如果wait到fd，则将对应的events_放入activeChannels中，同时承担需要扩容的任务。
+void fillActiveChannels(int numEvents,ChannelList* activeChannels) const
+	在epoll_wait中返回的每一个epoll_event都是发生事件的。所以直接修改对应channel的revents。
+	同时在activeChannels中添加该channel。channel注册在对应epoll_event中的data.ptr。
+void updateChannel(Channel* channel)
+	更新channel，调用关系：channel->EventLoop->poller。
+	要判断Channel的状态是新添加，还是已经在监听，还是已经被移除的。
+	对于是新的或是被移除的channel，都需要注册到epollfd，同时保证在channelmap中。两者的区别在于,
+	新的channel之前没有在epoll中保存。对于正在监听的channel判断是移除还是修改。
+	channel_ 是一个map在应用层,保存了所有的 channel 指针,维护了pair<fd,channel>。
+void update(int operation, Channel* channel)
+	这里要记住epoll_event的数据结构。
+	typedef union epoll_data {
+			void *ptr;
+			 int fd;
+			 __uint32_t u32;
+			 __uint64_t u64;
+		 } epoll_data_t;//保存触发事件的某个文件描述符相关的数据
+
+		 struct epoll_event {
+			 __uint32_t events;      /* epoll event */
+			 epoll_data_t data;      /* User data variable */
+		 };
+	在这里函数里面向epoll_data_t成员ptr赋值为channel的地址。如此一来一旦对应的fd有事件发生，可以直接
+	对应该channel。
+	该函数的主要功能是将events的值设置为channel.event的值
+	将data.ptr设置为指向channel结构体，向epollfd_注册相应的operation，channel的fd和epollevent。
+void removeChannel(Channel* channel)
+	该函数的主要功能是将指定的channel从channels_中删除。同时如果不是已经撤销监听的channel，还需要在
+	epollfd中将其注销掉。
+const char *EPollPoller::operationToString(int op)
+	打印当期的状态即是EPOLL_CTL_DEL还是ADD等。
+
+Channel类
+Channel是Reactor结构中的“事件”，它自始至终都属于一个EventLoop，负责一个文件描述符的IO事件，它包
+含文件描述符fd_，但实际上它不拥有fd_，不用负责将其关闭。在Channel类中保存这IO事件的类型以及对应
+的回调函数，当IO事件发生时，最终会调用到Channel类中的回调函数。
+成员变量：
+static const int kNoneEvent;	表示0;
+static const int kReadEvent;	POLLIN|POLLPRI;
+static const int kWriteEvent;	POLLOUT;
+	对应epoll_event中的events；
+int index_;
+	表示EPollPoller中的kNew，kAdded，kDeleted
+int events_；
+	在Poller中update设置event.events。利用enable~和disable~函数来设置。
+int revents_; 
+	在Poller中设置fillActiveChannels时为events_[i].events。利用set_revents设置。
+EventLoop* loop_;
+	拥有当期channel的loop
+const int fd_;	
+	在构造函数中赋值，监听事件的fd。
+bool addedToLoop_;
+	表示是否已经添加到EventLoop中。updata()中将其置为true；在初始化时和remove()中置为false。
+bool eventHandling_;
+	在进行相应的回调操作时将其置为true，否则为false。
+ReadEventCallback readCallback_;设置不同状态下的回调函数
+EventCallback writeCallback_;
+EventCallback errorCallback_;
+EventCallback closeCallback_;
+
+成员函数：
+Channel(EventLoop* loop, int fd);
+	初始化loop指向所在的EventLoop，和对应的描述符fd。同时设置对应的事件，以及标志。
+void update()
+	将当前事件更新到EventLoop中。主要调用该loop的updatechannel函数(传递到poller中。)
+void remove()
+	把当前事件从EventLoop中移除。主要调用该loop的removeChannel函数(传递到poller中。)
+	即以上两函数均在IO线程中调用。
+void handleEvent(Timestamp receiveTime)
+	该函数是EventLoop中进行loop()执行的主要函数。且传入的时间是poll()函数返回的时间。
+	主要调用handleEventWithGuard(Timestamp receiveTime)。
+void handleEventWithGuard(Timestamp receiveTime)
+	以上两个函数协同根据事件类型来调用回调函数，参数Timestamp是给readcallback用。
+	即根据epoll_event中的events或者struct pollfd中的revents。
+void tie(const boost::shared_ptr<void>& obj)
+	该函数主要在void TcpConnection::connectEstablished()中调用。为了表示connection已经建立成功。
+string eventsToString() const
+string reventsToString() const
+string eventsToString(int fd, int ev)
+	以上三个函数，主要是将fd对应的事件，表示成string，进行输出。
