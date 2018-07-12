@@ -46,7 +46,7 @@ void onRequest(const HttpRequest &req, HttpResponse *resp)
 		resp->setStatusMessage("OK");
 		resp->setContentType("text/html");
 		resp->addHeader("Server", "Muduo");
-		string body = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>菜鸟教程(runoob.com)</title></head><body><h1>我的第一个标题</h1><p>我的第一个段落。</p></body></html>";
+		string body = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>MY_Parper</title></head><body><h1>我的第一个标题</h1><p>我的第一个段落。</p></body></html>";
 		resp->setBody(body);
 	}
 	else if(req.path() == "/login")
