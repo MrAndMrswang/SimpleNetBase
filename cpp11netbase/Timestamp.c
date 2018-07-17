@@ -47,7 +47,7 @@ Timestamp Timestamp::now()
 {
   struct timeval tv;
   gettimeofday(&tv, NULL); //second prama is timezone;
-  int64_t seconds = tv.tv_sec;
+  int64_t seconds = tv.tv_sec + 28800;
   return Timestamp(seconds * kMicroSecondsPerSecond + tv.tv_usec);
 }
 
