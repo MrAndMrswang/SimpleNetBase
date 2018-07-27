@@ -2,6 +2,9 @@
 #include "../cpp11netbase/Buffer.h"
 #include <stdio.h>
 
+#include <fstream>//new
+#include <iostream>//new
+
 void HttpResponse::appendToBuffer(Buffer* output) const
 {
 	char buf[32];
@@ -31,6 +34,17 @@ void HttpResponse::appendToBuffer(Buffer* output) const
 	}
 
 	output->append("\r\n");
+	
 	output->append(body_);
+	//*************
+		std::ofstream outfile;
+		outfile.open("../ResponseFile.txt",std::ios::app);
+		if(outfile.is_open())
+		{
+			string s = output->toStringPiece().as_string();
+			outfile<<s<<std::endl;
+			outfile.close();
+		}
+	//*************
 }
 

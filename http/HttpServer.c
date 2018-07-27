@@ -5,6 +5,8 @@
 #include "HttpRequest.h"
 #include "HttpResponse.h"
 
+#include <fstream>//new
+#include <iostream>//new
 namespace detail
 {
 	void defaultHttpCallback(const HttpRequest&, HttpResponse* resp)
@@ -46,9 +48,19 @@ void HttpServer::onMessage(const TcpConnectionPtr& conn,
 		                   Timestamp receiveTime)
 {
 	HttpContext* context = boost::any_cast<HttpContext>(conn->getMutableContext());
-
+	//**********************************************************
+		std::ofstream outfile;
+		outfile.open("../RequestFile.txt",std::ios::app);
+		if(outfile.is_open())
+		{
+			string s(buf->toStringPiece().as_string());
+			outfile<<s<<std::endl;
+			outfile.close();
+		}
+	//**********************************************************
 	if (!context->parseRequest(buf, receiveTime))
 	{
+		
 		conn->send("HTTP/1.1 400 Bad Request\r\n\r\n");
 		conn->shutdown();
 	}
@@ -58,13 +70,14 @@ void HttpServer::onMessage(const TcpConnectionPtr& conn,
 		onRequest(conn, context->request());
 		context->reset();
 	}
+
 }
 
 void HttpServer::onRequest(const TcpConnectionPtr& conn, const HttpRequest& req)
 {
 	const string& connection = req.getHeader("Connection");
 	bool close = connection == "close" ||
-	(req.getVersion() == HttpRequest::kHttp10 && connection != "Keep-Alive");
+		(req.getVersion() == HttpRequest::kHttp10 && connection != "Keep-Alive");
 	HttpResponse response(close);
 	httpCallback_(req, &response);
 	Buffer buf;
