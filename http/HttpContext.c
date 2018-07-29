@@ -15,8 +15,9 @@ bool HttpContext::processRequestLine(const char* begin, const char* end)
 			const char* question = std::find(start, space, '?');
 			if (question != space)
 			{
-				request_.setPath(start, question);
-				request_.setQuery(question, space);
+				//request_.setPath(start, question);
+				//request_.setQuery(question, space);
+				request_.setPath(start, space);
 			}
 			else
 			{

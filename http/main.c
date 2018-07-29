@@ -14,6 +14,7 @@ bool benchmark = false;
 // 实际的请求处理
 void onRequest(const HttpRequest &req, HttpResponse *resp)
 {
+	printf("%s              !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n",req.path().c_str());
 	//std::cout << "Headers " << req.methodString() << " " << req.path() << std::endl;
 	if (!benchmark)
 	{
@@ -28,6 +29,18 @@ void onRequest(const HttpRequest &req, HttpResponse *resp)
 	if (req.path() == "/")
 	{
 		std::ifstream t("MyServ2.html");
+		string body((std::istreambuf_iterator<char>(t)),
+                		std::istreambuf_iterator<char>());
+		resp->setStatusCode(HttpResponse::k200Ok);
+		resp->setStatusMessage("OK");
+		resp->setContentType("text/html");
+		resp->addHeader("Server", "MiniMuduoHttpServ");
+		string now = Timestamp::now().toFormattedString();
+		resp->setBody(body);
+	}
+	if (req.path() == "/?wd=")
+	{
+		std::ifstream t("MyServ.html");
 		string body((std::istreambuf_iterator<char>(t)),
                 		std::istreambuf_iterator<char>());
 		resp->setStatusCode(HttpResponse::k200Ok);
