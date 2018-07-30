@@ -14,7 +14,7 @@ bool benchmark = false;
 // 实际的请求处理
 void onRequest(const HttpRequest &req, HttpResponse *resp)
 {
-	printf("%s              !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n",req.path().c_str());
+	//printf("%s              !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n",req.path().c_str());
 	//std::cout << "Headers " << req.methodString() << " " << req.path() << std::endl;
 	if (!benchmark)
 	{
@@ -28,14 +28,29 @@ void onRequest(const HttpRequest &req, HttpResponse *resp)
 
 	if (req.path() == "/")
 	{
-		std::ifstream t("MyServ2.html");
+		//std::ifstream t("MyServ2.html");
+		std::ifstream t("./moban/index.html");
 		string body((std::istreambuf_iterator<char>(t)),
                 		std::istreambuf_iterator<char>());
 		resp->setStatusCode(HttpResponse::k200Ok);
 		resp->setStatusMessage("OK");
 		resp->setContentType("text/html");
 		resp->addHeader("Server", "MiniMuduoHttpServ");
-		string now = Timestamp::now().toFormattedString();
+		resp->setBody(body);
+	}
+	if (req.path().substr(0,4) == "/img")
+	{
+		string reqpath = req.path();
+		string localpath("./moban");
+		localpath = localpath + reqpath;
+		//std::ifstream t("MyServ2.html");
+		std::ifstream t(localpath.c_str());
+		string body((std::istreambuf_iterator<char>(t)),
+                		std::istreambuf_iterator<char>());
+		resp->setStatusCode(HttpResponse::k200Ok);
+		resp->setStatusMessage("OK");
+		resp->setContentType("image/png");
+		resp->addHeader("Server", "MiniMuduoHttpServ");
 		resp->setBody(body);
 	}
 	if (req.path() == "/?wd=")
@@ -92,7 +107,7 @@ int main(int argc, char *argv[])
 		numThreads = atoi(argv[1]);
 	}
 	EventLoop loop;
-	InetAddress ad("127.0.0.1",2000);
+	InetAddress ad("127.0.0.1",8888);
 	HttpServer server(&loop, ad, "dummy");
 
 	server.setHttpCallback(onRequest);

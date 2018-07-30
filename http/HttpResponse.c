@@ -37,7 +37,7 @@ void HttpResponse::appendToBuffer(Buffer* output) const
 	
 	output->append(body_);
 	//*************
-		std::ofstream outfile;
+	/*	std::ofstream outfile;
 		outfile.open("../ResponseFile.txt",std::ios::app);
 		if(outfile.is_open())
 		{
@@ -46,5 +46,6 @@ void HttpResponse::appendToBuffer(Buffer* output) const
 			outfile.close();
 		}
 	//*************
+	*/
 }
 
